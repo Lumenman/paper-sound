@@ -63,6 +63,8 @@ lay at 0.02 to 0.31 degrees. Until the profile followed the lean the limit was
 
 Scan greyscale at the same dpi with **every adjustment off**: no auto-contrast,
 no levels, no white or black point, no sharpening, no deskew, not bitonal.
+8-bit or 16-bit, either reads the same -- the depth is scaled on the way in and
+every number here was measured at 8.
 
 Setting a white point is the expensive one. It costs **8.6 dB, in silence, and
 cannot be undone**. Zeroing everything paler than 4 parts in 255 is enough to do

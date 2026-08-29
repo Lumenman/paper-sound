@@ -891,6 +891,13 @@ def despeckle(x, thresh=DESPECKLE, reach=10):
         return x
     d = np.diff(x)
     lim = thresh * np.median(np.abs(d))
+    if not lim:
+        # More than half the read is flat: a page lost whole, a tail of blank
+        # lanes, a genuinely silent passage. The median step is then zero, and
+        # a threshold of zero makes an outlier of every sample there is -- the
+        # flag would flatten the whole file, which is the opposite of what it
+        # is for. Nothing to measure against, so nothing is taken out.
+        return x
     for i in np.flatnonzero(np.abs(d) > lim):
         j = i + 1
         while j < len(d) and j - i <= reach and abs(d[j]) > lim:
@@ -1147,6 +1154,28 @@ def pilot_retime(song, sr, n, pilot=True, rows=None):
     return thin(song, sr, rows), n - len(js), js, turned, rows
 
 
+def lane_joins(songs):
+    """Every sample index where one lane meets the next, sheets included.
+
+    A lane is not a second on every sheet -- `--rows 2` puts two lanes in one --
+    so the joins are counted per sheet rather than assumed `rate` apart.
+
+    The seam BETWEEN two sheets is a join like any other, and is the one this
+    used to miss: a sheet of n lanes ends at n*lane, which is where the walk up
+    that sheet stops rather than a step it takes. It is also the join most
+    likely to be heard -- a sheet is around two minutes of audio, so it was one
+    click every two minutes, on exactly the reads that are long enough to sit
+    through. The last sheet's end is not a join at all, being where the file
+    stops.
+    """
+    joins, at = [], 0
+    for piece, lane in songs:
+        joins += range(at + lane, at + len(piece), lane)
+        at += len(piece)
+        joins.append(at)
+    return np.array(joins[:-1], int)
+
+
 def do_read(args):
     songs, rate = [], None
     for path in args.scans:
@@ -1229,16 +1258,10 @@ def do_read(args):
             lane = round(lane * rate / sr)
         songs.append((song, lane))
 
-    # The joins are where the lanes meet, and a lane is not a second on every
-    # sheet: --rows 2 puts two of them in one, so they are counted per sheet
-    # rather than assumed to be `rate` apart.
-    joins, at = [], 0
-    for piece, lane in songs:
-        joins += range(at + lane, at + len(piece), lane)
-        at += len(piece)
     song = np.concatenate([piece for piece, _ in songs])
+    joins = lane_joins(songs)
     song = declick(highpass(despeckle(song, args.despeckle), BASELINE),
-                   np.array(joins, int), DECLICK)
+                   joins, DECLICK)
     out = args.out or args.scans[0].rsplit(".", 1)[0] + ".wav"
     write_wav(out, song, rate)
     print(f"wrote {out}: {len(song)} samples, {len(song) / rate:.1f} s at {rate} Hz")
@@ -1298,6 +1321,21 @@ def selftest():
         assert abs(rows[0] - (sheet - rate) / 2) <= 1, "ink is not centred on the sheet"
         # both sheets at the same size, or the sound changes pitch at the join
         assert load_ink(png2).shape == ink.shape, "sheets disagree on size"
+
+        # And the seam BETWEEN two sheets is a lane join like any other -- the
+        # one that used to be missed, because it is where the walk up a sheet
+        # stops rather than a step it takes. Two sheets of three and two lanes
+        # join at every lane and at the seam, and not at the end of the file.
+        two = [(np.zeros(3 * rate), rate), (np.zeros(2 * rate), rate)]
+        assert list(lane_joins(two)) == [rate, 2 * rate, 3 * rate, 4 * rate], (
+            f"lane joins over two sheets: {list(lane_joins(two))}")
+
+        # A read that is mostly silence has no median step to threshold
+        # against, and a threshold of zero would flatten what is left of it.
+        quiet = np.zeros(200)
+        quiet[100] = 1.0
+        assert despeckle(quiet, 20)[100] == 1.0, (
+            "despeckle on a silent read took out the only sample in it")
 
         # A blockless sheet of a single lane cannot be segmented -- the pitch
         # estimator searches from two periods up -- so printing pads it out to

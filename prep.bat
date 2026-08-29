@@ -1,0 +1,55 @@
+@echo off
+rem Подготовка речевого аудио для печати paper_sound.py: A4, 600 dpi.
+rem
+rem   prep.bat [вход.wav] [выход.wav]
+rem
+rem 6780 Гц - не выбор, а высота печатной области A4 в пикселях при 600 dpi:
+rem (297мм - 2*5мм полей) / 25.4 * 600. Ресемпл делается здесь, чтобы
+rem to_rate() в paper_sound.py увидел rate == sr и не трогал сигнал своим
+rem box-фильтром - полифазный rate -v заметно чище.
+rem
+rem Печатать:  python paper_sound.py print out.wav --pitch 38 -o sheet
+rem            шаг 38 px вместо 39 -> 122 с на лист, хватает на все 120.1 с.
+
+setlocal
+set SOX=%~dp0sox\sox.exe
+set IN=%~1
+if "%IN%"=="" set IN=input.wav
+set OUT=%~2
+if "%OUT%"=="" set OUT=out.wav
+
+rem Ёмкость листа при PITCH=38.7 по умолчанию. do_print берёт ceil() от длины,
+rem поэтому 120.1 с - это уже 121 и второй лист ради тишины в хвосте.
+set SECS=120
+
+rem СКОЛЬКО ЖАТЬ. Это единственная ручка громкости, которая что-то делает:
+rem финальный gain -n менять бесполезно, do_print всё равно делает
+rem signal / max(abs(signal)) и нормирует лист по пику.
+rem
+rem   6:-15,-11,0,-8   RMS -11.9  crest 3.5   текущая, плотно как радио
+rem   6:-12,-10,0,-6   RMS -13.5  crest 4.2
+rem   6:-9,-8,0,-5     RMS -14.7  crest 4.9
+rem   6:-6,-5,0,-3     RMS -16.3  crest 5.8   трогает только настоящие пики
+rem   off              RMS -18.6  crest 7.6   совсем без него
+rem
+rem Тише = чище на слух, но шум бумаги громче относительно речи.
+set CLIP=6:-9,-8,0,-5
+
+rem Носитель даёт ~20 dB SNR при размахе штриха +-15.5 px, речь приходит с
+rem 22 dB crest factor - то есть средним уровнем ровно в шум бумаги.
+rem Вся цепочка существует ради того, чтобы этот разрыв закрыть.
+"%SOX%" "%IN%" -b 16 "%OUT%" ^
+ trim 0 %SECS% ^
+ gain -6 ^
+ equalizer 2600 1.0q +4 ^
+ highpass 80 ^
+ compand 0.002,0.25 6:-65,-90,-40,-14,-20,-9,0,-5 0 -90 0.1 ^
+ compand 0,0 %CLIP% 0 -90 ^
+ rate -v 6780 ^
+ gain -n -1
+if errorlevel 1 exit /b 1
+
+rem Ориентиры: Pk lev ~-1, RMS Pk ~-5.5, RMS Tr ниже -80 (паузы не подняты).
+echo.
+"%SOX%" "%OUT%" -n stats
+endlocal

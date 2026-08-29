@@ -1,0 +1,10 @@
+# Sheets, scans, audio and cut lanes: the experiments, not the source.
+# LAB.ru.md carries the numbers they produced.
+*.png
+*.wav
+*.tif
+*_lanes/
+__pycache__/
+
+# Bundled sox binaries
+sox/

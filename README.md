@@ -37,9 +37,11 @@ used, and counted by neither side.
 
 Needs `numpy` and `pillow`.
 
-The program lives in `paper-sound/`. A first-time guide -- printing, scanning,
-calibration, testing, the scanner's whine -- is `paper-sound/GUIDE.ru.md`
-(Russian). This file is the format itself; `LAB.ru.md` is the lab journal.
+The program lives in `paper-sound/`, and so do the Russian docs: a first-time
+guide (printing, scanning, calibration, testing, the scanner's whine) in
+`paper-sound/GUIDE.ru.md`, the same format description as this file in
+`paper-sound/README.ru.md`, and the lab journal -- every number and every dead
+end -- in `paper-sound/LAB.ru.md`. This file is the format itself.
 
 ## The carrier
 

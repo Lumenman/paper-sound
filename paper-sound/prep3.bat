@@ -12,6 +12,8 @@ rem оставлен как был. Плотность добирается кл
 
 setlocal
 set SOX=%~dp0..\sox\sox.exe
+rem sox: сначала свой, рядом с проектом, потом любой из PATH.
+if not exist "%SOX%" set SOX=sox
 set IN=%~1
 if "%IN%"=="" set IN=input.wav
 set OUT=%~2

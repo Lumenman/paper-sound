@@ -1097,6 +1097,46 @@ def thin(song, sr, rows):
                            for k in range(len(song) // sr)])
 
 
+def clock_order(rates, verb):
+    """Which way up the sheet lay, from what its two end clocks read back.
+
+    -> (turned, what to say about it, or None). `rates` is the printed rate of
+    the head clock and of the tail one, either of them None where that end did
+    not read as a clock; `verb` is what the caller does to a sheet, "read" or
+    "cut", since the answer to a sheet that cannot say is to do it again
+    turned.
+
+    One rule, one place, because there are two readers and they turn different
+    things: paper_sound turns the AUDIO -- reversing the signal and its sign IS
+    the 180 degree turn, lane order, time and excursion in one stroke -- and
+    cut_lanes turns the IMAGE and segments it again. Two mechanisms that must
+    never disagree about WHETHER the sheet was turned, because a sheet played
+    backwards is the one fault on this format that every other measurement
+    reports as fine.
+
+    Turned on TWO clocks reading in the wrong order and on nothing less. One
+    clock is not evidence, however tempting it looks: pilot_bin takes any lane
+    whose trace is a tone within an octave of a clock's rate, and an audio lane
+    can be one -- a clockless sheet here reads [None, 20], its last second
+    being a 24 Hz sine in a 400-sample lane. Acting on that alone turns a whole
+    sheet back to front on the strength of one held note.
+
+    Two clocks at the SAME rate cannot say either -- that sheet was printed
+    before the rates differed -- and that is worth saying out loud rather than
+    treating as a quiet no. 04.png here is such a sheet: it reads 0.0029
+    against the audio that went onto it the way it was scanned and 0.4706
+    turned, and neither number is visible from inside.
+    """
+    if list(rates) == [PILOT_END, PILOT]:
+        return True, None
+    if rates[0] is not None and rates[0] == rates[1]:
+        return False, (f"both clocks are the {rates[0]}-sample one, so this "
+                       f"sheet cannot say which way up it lay -- it was "
+                       f"printed before the two rates differed. If it plays "
+                       f"backwards, {verb} it again with --upside-down")
+    return False, None
+
+
 def pilot_retime(song, sr, n, pilot=True, rows=None):
     """Retime a read off its clock lanes and cut them off the ends.
 
@@ -1132,19 +1172,12 @@ def pilot_retime(song, sr, n, pilot=True, rows=None):
         got = [(k, pilot_timebase(song[k * sr:(k + 1) * sr])) for k in (0, last)]
         return [(k == last, *g) for k, g in got if g is not None]
     got = ends(song)
-    turned = [per for _, _, per, _ in got] == [PILOT_END, PILOT]
-    if len(got) == 2 and got[0][2] == got[1][2]:
-        # Both ends carry the same rate, so the sheet is symmetric after all
-        # and nothing on it says which way up it lay: it was printed before the
-        # two clocks were given different rates. Said out loud rather than
-        # treated as a quiet no, because it is the one case where a sheet plays
-        # backwards and no measurement anywhere reports a fault -- 04.png here
-        # reads 0.0029 against the audio that went onto it the way it was
-        # scanned and 0.4706 turned, and neither number is visible from inside.
-        print(f"both clocks are the {got[0][2]}-sample one, so this sheet "
-              f"cannot say which way up it lay -- it was printed before the "
-              f"two rates differed. If it plays backwards, read it again with "
-              f"--upside-down")
+    rates = [None, None]
+    for last, _, per, _ in got:
+        rates[bool(last)] = per
+    turned, said = clock_order(rates, "read")
+    if said:
+        print(said)
     if turned:
         song = -song[::-1]
         got = ends(song)                 # the same clocks, in the sheet's frame

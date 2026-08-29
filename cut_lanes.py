@@ -48,8 +48,9 @@ import numpy as np
 from PIL import Image, UnidentifiedImageError
 
 from paper_sound import (APERTURE, DPI, PILOT, PILOT_END, PITCH, STICKY,
-                         STROKE, lane_centroid, lane_drift, lay_out, pilot_bin,
-                         pilot_lane, render_page, trim_paper)
+                         STROKE, clock_order, lane_centroid, lane_drift,
+                         lay_out, pilot_bin, pilot_lane, render_page,
+                         trim_paper)
 from read_tracks import find_tracks, ink_rows, load_ink, mend_png, odd_lane
 
 # ------------------------------------------------------------------- defaults
@@ -252,24 +253,16 @@ def cut(path, outdir, pitch=None, bleed=BLEED, turn=None, negative=NEGATIVE,
         ends, rows_said = clocks(ink, lanes) if PILOT else ([None] * 2, [None] * 2)
         if rows_said[0] == rows_said[1]:
             speed = rows_said[0]
-        # Turned on TWO clocks reading in the wrong order, and on nothing
-        # less. One clock is not evidence of which way up a sheet lay, however
-        # tempting it looks: pilot_bin takes any lane whose trace is a tone
-        # within an octave of a clock's rate, and an audio lane can be one --
-        # a clockless sheet here reads [None, 20], its last second being a
-        # 24 Hz sine in a 400-sample lane. Acting on that alone turns a whole
-        # sheet back to front on the strength of one held note. What one clock
-        # is worth is saying so, below.
-        turn = ends == [PILOT_END, PILOT]
+        # The rule itself is paper_sound's, called rather than copied: this
+        # reader turns the IMAGE where that one turns the AUDIO, and the two
+        # must not be free to drift apart about WHETHER a sheet was turned.
+        turn, said = clock_order(ends, "cut")
         if turn:
             print(f"{path}: the clocks read back in the wrong order -- the "
                   f"sheet went on the glass upside down; the strips have been "
                   f"turned. The file on disk is untouched")
-        elif ends[0] is not None and ends[0] == ends[1]:
-            print(f"{path}: both clocks read {ends[0]} samples a cycle, so this "
-                  f"sheet cannot say which way up it lay -- it was printed "
-                  f"before the two rates differed. If it plays backwards, cut "
-                  f"it again with --upside-down")
+        elif said:
+            print(f"{path}: {said}")
         elif ends.count(None) == 1:
             got = ends[0] if ends[0] is not None else ends[1]
             print(f"{path}: only one end reads as a clock ({got} samples a "

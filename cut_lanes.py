@@ -41,15 +41,16 @@ equal this says so, and --upside-down is the answer.
     cut_lanes.py --selftest
 """
 import argparse
+import io
 import os
 
 import numpy as np
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 
 from paper_sound import (APERTURE, DPI, PILOT, PILOT_END, PITCH, STICKY,
                          STROKE, lane_centroid, lane_drift, lay_out, pilot_bin,
                          pilot_lane, render_page, trim_paper)
-from read_tracks import find_tracks, ink_rows, load_ink, odd_lane
+from read_tracks import find_tracks, ink_rows, load_ink, mend_png, odd_lane
 
 # ------------------------------------------------------------------- defaults
 # Every default lives here; the command line only overrides them, the same way
@@ -131,9 +132,24 @@ BLEED = STROKE / 2      # px kept on either side of the cut. find_tracks picks
 
 
 def strip_dpi(path):
-    """The scan's own dpi, or the format's, so a strip prints at actual size."""
-    with Image.open(path) as im:
-        d = im.info.get("dpi")
+    """The scan's own dpi, or the format's, so a strip prints at actual size.
+
+    Through mend_png for the same reason load_ink is: one scanner here writes
+    pHYs with a CRC it computed wrong, and pHYs is the very chunk this asks
+    for. The ink went through the mend and the dpi did not, so sheetD_scan1
+    and _2 -- two real scans sitting in this folder -- came apart here with
+    PIL's own traceback before a strip was cut. load_ink says the file was
+    mended; this one has nothing to add.
+    """
+    try:
+        with Image.open(path) as im:
+            d = im.info.get("dpi")
+    except UnidentifiedImageError:
+        fixed, _ = mend_png(path)
+        if fixed is None:
+            raise
+        with Image.open(io.BytesIO(fixed)) as im:
+            d = im.info.get("dpi")
     return tuple(float(v) for v in d) if d else (DPI, DPI)
 
 
@@ -511,6 +527,30 @@ def selftest():
                 assert np.array_equal(np.asarray(im), strips["up"][k - 1]), \
                     f"strip {k} is not the same pixels in png as in tif"
 
+        # A sheet whose pHYs carries a CRC its writer computed wrong. One
+        # scanner here does that to every file it makes, and the ink was
+        # mended for it while the dpi was not -- so this file came apart on
+        # sheetD_scan1 and _2 with PIL's own traceback, before a strip was
+        # cut. The strips have to come back the same as off the sound sheet.
+        raw = bytearray(open(os.path.join(tmp, "up.png"), "rb").read())
+        at = raw.find(b"pHYs")
+        assert at > 0, "the test sheet was saved without a pHYs chunk to break"
+        end = at + 4 + int.from_bytes(raw[at - 4:at], "big")
+        raw[end:end + 4] = bytes(b ^ 0xff for b in raw[end:end + 4])
+        bad = os.path.join(tmp, "badcrc.png")
+        open(bad, "wb").write(bytes(raw))
+        out = os.path.join(tmp, "badcrc_lanes")
+        os.makedirs(out, exist_ok=True)
+        said = _io.StringIO()
+        with contextlib.redirect_stdout(said):
+            got = cut(bad, out)
+        assert got == n + 2, f"the mended sheet cut into {got} lanes"
+        assert "mended in memory" in said.getvalue(), (
+            f"a mended sheet was cut without a word: {said.getvalue().strip()!r}")
+        for k in range(1, got + 1):
+            with Image.open(os.path.join(out, f"{k:0{PAD}d}.{FORMAT}")) as im:
+                assert np.array_equal(np.asarray(im), strips["up"][k - 1]),                     f"strip {k} off the mended sheet is not the same pixels"
+
         # A crooked sheet, which the square one above cannot stand in for: the
         # cut is a rectangle and the stroke is not vertical inside it. 17.6 px
         # of skew over the sheet is what the crooked scan in paper_sound.py
@@ -627,6 +667,7 @@ def selftest():
 
     print(f"selftest: {n + 2} lanes cut both ways up, clocks in order, "
           f"lane-wide centroid r > 0.999 on every strip; tif and png identical; "
+          f"a broken pHYs CRC mends to the same strips; "
           f"a sheet 17.6 px crooked cuts to r > 0.999 as well; a loud one cuts "
           f"to strips and a full-swing one still says why it cannot; two sheets "
           f"number on; "

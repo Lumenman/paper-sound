@@ -1405,11 +1405,17 @@ def selftest():
     # its own and still returns 0.963 uncorrected -- which is why the value
     # here is 0.04 and not the 0.0025 that a crooked sheet actually looks like.
     #
-    # ponytail: a single line fitted to the mean of the lanes, which holds to
-    # 0.04 and starts reading low at 0.06 (36 px). At 0.08 it collapses to zero
-    # and takes the read down to 0.32. The crooked sheet came in at 17.67 px,
-    # so the margin is a factor of two; a sheet fed in visibly crooked would
-    # need the fit done per strip of rows rather than over the whole page.
+    # ponytail: a single line fitted to the mean of the lanes, and what it can
+    # take is 24 px of shear across the page exactly, 36 px reading low, 48 px
+    # not at all -- in pixels of shear, the same on sheets of 600, 2000 and
+    # 6570 rows, because the stroke leaving the aperture is what breaks it and
+    # the aperture is in pixels. This line used to read those numbers as
+    # px/row and call the margin a factor of two by comparing 17.67 px against
+    # 24; the sheets here in fact lie at 3 to 36 px, so sheetC_scan already
+    # sits where the fit reads low and the crooked ones are a third of the way
+    # to nothing at all. Past 48 px lane_drift() says so against the ink's own
+    # edges -- see there, and the collapsed sheet below. The fix, rather than
+    # the warning, is fitting per strip of rows.
     step0, nlanes = 39.0, 11
     for drawn in (0.0, 0.0025, 0.04):    # 0, 1.5 and 24 px down the sheet
         clocked = np.concatenate([pilot_lane(rate), sig[:(nlanes - 2) * rate],

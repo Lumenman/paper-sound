@@ -245,13 +245,18 @@ dirty, then it is the only thing that helps.
 
 ## Known limits
 
-- **The skew estimate fails silently past 0.06 px/row.** It is exact to 0.04
-  (24 px down a 600-row sheet), reads low at 0.06, and collapses to zero at
-  0.08 — taking the read down to r=0.32. The sheets measured here came in at 4.9
-  and 17.7 px, so there is about a factor of two of margin, and nothing on the
-  page contradicts a wrong answer. The upgrade is fitting per strip of rows
-  rather than over the whole page; there is very little curvature to recover, so
-  this is about a badly fed sheet rather than a typical one.
+- **The skew estimate collapses at 48 px of shear across the page**, and the
+  limit is in pixels of shear rather than pixels per row: the same three
+  numbers came back on sheets of 600, 2000 and 6570 rows. At 24 px the estimate
+  is exact, at 36 px it reads 8-60% low and the read holds, at 48 px it
+  collapses to zero and takes the read down to r=0.02-0.39. The sheets here lie
+  at 3 to 36 px, so the crooked ones are a third of the way to the cliff --
+  not the "factor of two of margin" this used to claim, which compared px
+  against px/row. **The sheet now says so:** the estimate is checked against
+  the ink's own edges -- a sheared page leans its ink block with it -- and a
+  disagreement past 15 px is printed as a warning. The upgrade, the day that
+  warning fires on a real sheet, is fitting per strip of rows rather than over
+  the whole page.
 - **The two clocks disagree by a slope**, as above. Riding the line between them
   handles it; what is left is the shared wiggle.
 - **Some of the carrier's headroom is still unspent.** A sheet that never left

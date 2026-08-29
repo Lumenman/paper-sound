@@ -111,6 +111,8 @@ BASELINE = 331  # samples of moving average subtracted. Measured, that is
                 # click, which is why they are plain numbers and not
                 # sr // 20 | 1 and sr // 400 (which would give 329 and 16 here
                 # and are what to write if a sheet ever needs them to hold).
+SKEW_GAP = 15   # px of skew across the page that the fit and the sheet's own
+                # ink edges may disagree by before it is called out; lane_drift()
 DECLICK = 16    # samples a lane join is spread over: 2.4 ms at 600 dpi on A4
 DESPECKLE = 0   # multiple of the median step a sample may jump; 0 = off
 PILOT = 32      # samples per cycle of the first clock lane; 0 = no clocks
@@ -337,13 +339,72 @@ def lane_drift(ink, lanes, span, narrow=APERTURE, sticky=STICKY):
     Split out because cut_lanes.traces() aims its aperture with the same
     number, for the same reason, and a second copy of eight lines is free to
     drift from this one the day either changes.
+
+    The fit has a cliff, and it is measured in PIXELS OF SHEAR ACROSS THE
+    PAGE, not in px per row -- the same three numbers came back on sheets of
+    600, 2000 and 6570 rows:
+
+        24 px of shear   fit exact                     r 1.00
+        36 px            fit reads 8-60% low           r 0.99
+        48 px            fit collapses to zero         r 0.02 - 0.39
+
+    Past the cliff nothing else on the page objects. That made it the last
+    catastrophic failure here that reported nothing at all -- and it is not a
+    remote one: the sheets in this project lie at 3 to 36 px of shear, which
+    puts the crooked ones a third of the way from "exact" to "collapsed".
+
+    So the fit is checked against something that does not depend on what was
+    printed: the ink's own edges. A sheared page leans, and the lean IS the
+    shear -- measured as the left and right ends of the inked columns in the
+    top eighth of the page against the same in the bottom eighth. Where the fit
+    is content, the edges are geometry.
+
+    Each edge is compared on its own and the closer one wins, because one of
+    them can be something else: `sheetB_scan` carries a blob in its top band
+    that puts its left edge 1343 px out while its right edge lands within 3 px
+    of the fit. Both edges must disagree before this says anything. Measured
+    disagreement, px of skew across the page:
+
+        eight real scans, 61 to 242 lanes         0.1 - 3.8
+        synthetic sheets the fit reads right      0.0 - 2.3
+        the fit reading low (36 px of shear)      2.1 - 20.5
+        the fit collapsed (48 to 80 px)          45.5 - 71.8
+
+    SKEW_GAP at 15 px sits four times above the worst honest sheet and three
+    times under the weakest collapse. It catches every collapse produced here,
+    and the stage before it only sometimes -- which is the right way round,
+    since reading low costs 0.01 of r and collapsing costs all of it.
+
+    ponytail: this reports a fit that has lost the sheet, it does not fix one.
+    The fix is fitting per strip of rows, and it is worth writing the day a
+    real sheet trips this.
     """
     flat = [p for p in (lane_centroid(ink, a, b, span, 0.0, narrow, sticky)
                         for a, b in lanes) if p is not None]
     if not flat:
         raise ValueError("no readable tracks")
     n = min(len(p) for p in flat)
-    return float(np.polyfit(np.arange(n), np.mean([p[:n] for p in flat], 0), 1)[0])
+    slope = float(np.polyfit(np.arange(n), np.mean([p[:n] for p in flat], 0), 1)[0])
+
+    rows = len(ink)
+    band = max(rows // 8, 1)
+    strong = ink > (float(ink.max()) + np.median(ink[::16, ::16])) / 2
+    ends = []
+    for lo in (0, rows - band):
+        col = strong[lo:lo + band].sum(0)
+        lit = np.flatnonzero(col > col.max() * 0.02)
+        ends.append((lit[0], lit[-1]) if len(lit) else None)
+    if all(e is not None for e in ends):
+        leans = [(b - a) / (rows - band) for a, b in zip(*ends)]
+        gap = min(abs(slope - lean) for lean in leans) * rows
+        if gap > SKEW_GAP:
+            print(f"the skew fit says {slope * rows:+.0f} px across the page "
+                  f"and the ink's own edges say "
+                  f"{', '.join(f'{lean * rows:+.0f}' for lean in leans)} -- "
+                  f"one line no longer follows this sheet, so the skew is read "
+                  f"low or not at all, and nothing else here will say so. "
+                  f"Rescan it straighter")
+    return slope
 
 
 def trim_paper(ink, frac=0.02):
@@ -1359,11 +1420,38 @@ def selftest():
 
         assert len(find_tracks(sheet_ink)) == nlanes, (
             f"skew {drawn:+.4f}: sheet cut into {len(find_tracks(sheet_ink))} lanes")
-        got, _, got_n = read_curves_page(sheet_ink)
+        said = _io.StringIO()
+        with contextlib.redirect_stdout(said):
+            got, _, got_n = read_curves_page(sheet_ink)
+        # The fit holds on all three, and says so by keeping quiet.
+        assert "skew fit says" not in said.getvalue(), (
+            f"skew {drawn:+.4f} reads back at r>0.95 and was called crooked: "
+            f"{said.getvalue().strip()!r}")
         assert got_n == nlanes, f"skewed sheet read {got_n} lanes of {nlanes}"
         rr = np.corrcoef(highpass(got[rate:-rate], 31),
                          highpass(sig[:(nlanes - 2) * rate], 31))[0, 1]
         assert rr > 0.95, f"skew {drawn:+.5f}: read back at only {rr:.4f}"
+
+    # And past the fit: 0.08 px/row, where one line collapses to zero and takes
+    # the read with it. This is the case the split check exists for -- the read
+    # comes back sounding like noise and every other measurement on the page
+    # agrees with itself, so unless the fit reports its own disagreement,
+    # nothing does.
+    clocked = np.concatenate([pilot_lane(rate), sig[:(nlanes - 2) * rate],
+                              pilot_lane(rate)])
+    edges, _ = lay_out(clocked, rate, nlanes, step0, 0.08)
+    wide = int(np.ceil(max(r.max() for _, r in edges) + step0))
+    bent = trim_paper(render_page(edges, step0, wide) * 255)
+    said = _io.StringIO()
+    with contextlib.redirect_stdout(said):
+        got4 = read_curves_page(bent)[0]
+    m = min(len(got4) - 2 * rate, (nlanes - 2) * rate)
+    rr = np.corrcoef(highpass(got4[rate:rate + m], 31),
+                     highpass(sig[:m], 31))[0, 1]
+    assert rr < 0.5, f"the collapsed sheet read back at {rr:.4f}, not collapsed"
+    assert "skew fit says" in said.getvalue(), (
+        f"a sheet whose skew fit collapsed said nothing: "
+        f"{said.getvalue().strip()!r}")
 
     # A PNG whose ancillary chunk carries a CRC its writer got wrong. One
     # scanner here does that to pHYs -- the chunk that says dpi and nothing

@@ -14,22 +14,22 @@
 полосы.
 
 ```
-python paper_sound.py print song.wav -o sheet    # -> sheet_01.png, sheet_02.png, ...
-python paper_sound.py read sheet_01.png -o back.wav
-python paper_sound.py selftest
-python bench.py sheet_01.png song.wav            # оценить чтение против оригинала
-python bench.py --same a.png b.png c.png song.wav  # три скана одного листа: медиана
+python paper-sound/paper_sound.py print song.wav -o sheet    # -> sheet_01.png, sheet_02.png, ...
+python paper-sound/paper_sound.py read sheet_01.png -o back.wav
+python paper-sound/paper_sound.py selftest
+python paper-sound/bench.py sheet_01.png song.wav            # оценить чтение против оригинала
+python paper-sound/bench.py --same a.png b.png c.png song.wav  # три скана одного листа: медиана
 ```
 
 Запись на 120 секунд, на настройках по умолчанию:
 
 ```
-$ python paper_sound.py print song.wav -o sheet
+$ python paper-sound/paper_sound.py print song.wav -o sheet
 song.wav: 120 s at 6780 Hz, 120 per sheet -> 1 sheet
   a4 210x297 mm = 4961x7016 px at 600 dpi, margin 5 mm, pitch 38.7 px = 1.64 mm, clock yes
   sheet.png: 120 lanes, seconds 0-120, ink 4712x6780 px = 199x287 mm, margins 5.2 mm sides, 5.0 mm ends
 
-$ python paper_sound.py read sheet.png -o back.wav
+$ python paper-sound/paper_sound.py read sheet.png -o back.wav
 sheet.png: 2 clock lanes found, carriage ripple 0.07 samples rms
 sheet.png: 4961x7016 px, 120 lanes, 6780 Hz
 wrote back.wav: 813600 samples, 120.0 s at 6780 Hz
@@ -39,6 +39,10 @@ wrote back.wav: 813600 samples, 120.0 s at 6780 Hz
 используются, но не попадают ни в один из них.
 
 Нужны `numpy` и `pillow`.
+
+Программа лежит в `paper-sound/`. Руководство для того, кто читает впервые --
+печать, сканирование, калибровка, проверка, писк сканера -- в
+`paper-sound/GUIDE.ru.md`. Этот файл про сам формат, `LAB.ru.md` -- журнал.
 
 ## Носитель
 

@@ -11,7 +11,7 @@ rem -20 -> -12 (+8) вместо -40 -> -14 и -20 -> -9. Гейт пауз (-65
 rem оставлен как был. Плотность добирается клипом, см. меню ниже.
 
 setlocal
-set SOX=%~dp0sox\sox.exe
+set SOX=%~dp0..\sox\sox.exe
 set IN=%~1
 if "%IN%"=="" set IN=input.wav
 set OUT=%~2

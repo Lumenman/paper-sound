@@ -14,7 +14,7 @@ rem который там клиповал и работал лимитером.
 rem оставлены намеренно — это часть того звука, а не ошибка запуска.
 
 setlocal
-set SOX=%~dp0sox\sox.exe
+set SOX=%~dp0..\sox\sox.exe
 set IN=%~1
 if "%IN%"=="" set IN=input.wav
 set OUT=%~2

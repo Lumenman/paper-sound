@@ -104,7 +104,79 @@ def inked_span(prof, frac=INK):
     return on[0], on[-1] + 1
 
 
-def find_pitch(ink, x0, x1, min_pitch=6, rows=512, parts=3, subharm=True):
+def ink_lean(ink, bands=8):
+    """How far the ink block itself leans, px per row, from each edge on its own.
+
+    Geometry rather than content: a sheared page carries its whole block of
+    ink over with it, so the leftmost and rightmost inked columns in the top
+    band of the page sit somewhere else in the bottom band, and the difference
+    is the shear. Nothing here asks what was printed, which is the point --
+    every other measurement of the skew in this file is a centroid of the
+    audio, and inherits the audio.
+
+    The two edges are returned separately, never averaged. One of them can be
+    something other than the sheet: `sheetB_scan` carries a blob in its top
+    band that puts its left edge 1343 px out while its right edge lands within
+    3 px of the truth. Whoever uses these takes the smaller one, so junk that
+    invents a lean is thrown out and junk that hides one costs only the head
+    start.
+    """
+    rows = len(ink)
+    band = max(rows // bands, 1)
+    strong = ink > (float(ink.max()) + np.median(ink[::16, ::16])) / 2
+    ends = []
+    for lo in (0, rows - band):
+        col = strong[lo:lo + band].sum(0)
+        lit = np.flatnonzero(col > col.max() * 0.02)
+        if not len(lit):
+            return []
+        ends.append((lit[0], lit[-1]))
+    return [(b - a) / (rows - band) for a, b in zip(*ends)]
+
+
+def col_profile(ink, lean=0.0):
+    """Mean column profile, summed along `lean` px per row instead of straight down.
+
+    Summed straight down, the profile is the one thing on the page that skew
+    destroys: a lane at the bottom of a sheared sheet sits over its neighbour's
+    columns at the top, the periodicity smears, and the grid cuts lanes that
+    were never printed. Everything else in the reader already rides the lean --
+    the window follows the drift, each lane is cropped to its own ink rows --
+    so shifting each row by -lean*y before it is added is the whole of the fix.
+    Index arithmetic, not a rotation: no pixel is resampled and no sub-pixel
+    position is quantised, which is what the carrier is made of.
+
+    Centred on mid-page, like everything else built off this profile: the
+    columns that come back are where a lane sits halfway down the sheet, which
+    is where lane_centroid's ramp is zero.
+    """
+    if not lean:
+        return ink.mean(0).astype(np.float64)
+    n = ink.shape[1]
+    shift = np.round(lean * (np.arange(len(ink)) - len(ink) / 2)).astype(int)
+    prof = np.zeros(n)
+    # Divided by the rows that actually LANDED in each column, not by the page
+    # height: a column near the edge is fed by only part of the sheet, and
+    # dividing those by the whole of it digs a well there. The floor under the
+    # lanes is prof.min() (see the load filter below), so a well at one edge is
+    # not a cosmetic edge effect -- it drops the floor by a third of the ink,
+    # every bare-paper cell then clears 0.25 of the median load, and a scan
+    # with junk beside its field came back cut into 95 lanes of a printed 59.
+    hits = np.zeros(n)
+    for s in np.unique(np.clip(shift, -n, n)):
+        at = shift == s
+        band, k = ink[at].sum(0, dtype=np.float64), at.sum()
+        if 0 <= s < n:
+            prof[:n - s] += band[s:]
+            hits[:n - s] += k
+        elif -n < s < 0:
+            prof[-s:] += band[:n + s]
+            hits[-s:] += k
+    return prof / np.maximum(hits, 1)
+
+
+def find_pitch(ink, x0, x1, min_pitch=6, rows=512, parts=3, subharm=True,
+               lean=0.0):
     """Lane pitch in px, from the row-wise mean FFT magnitude.
 
     Averaging the column profile first and transforming that only survives
@@ -200,7 +272,7 @@ def find_pitch(ink, x0, x1, min_pitch=6, rows=512, parts=3, subharm=True):
 
     # Whether that is the pitch or a harmonic of it is a question the paper can
     # answer and the spectrum cannot; see harmonic().
-    prof = ink[:, x0:x1].mean(0).astype(np.float64)
+    prof = col_profile(ink[:, x0:x1], lean)
     pitch = harmonic(prof, pitch)
 
     # A page's own pitch is not one number. Measured on the four scans of
@@ -226,7 +298,8 @@ def find_pitch(ink, x0, x1, min_pitch=6, rows=512, parts=3, subharm=True):
         w = (x1 - x0) // parts
         med = harmonic(prof, float(np.median(
             [find_pitch(ink, x0 + i * w, x0 + (i + 1) * w, min_pitch, rows,
-                        parts=1, subharm=False) for i in range(parts)])))
+                        parts=1, subharm=False, lean=lean)
+             for i in range(parts)])))
         # And the thirds do not get the last word either. Three windows that
         # agree with each other and not with the page have not measured the
         # page's drift; they have made the same mistake in the same narrow
@@ -322,7 +395,7 @@ def harmonic(prof, pitch, tol=CUTS):
     return next(c for c, s in zip(cands, costs) if s <= tol * best)
 
 
-def find_tracks(ink, pitch=None, min_pitch=6):
+def find_tracks(ink, pitch=None, min_pitch=6, lean=None):
     """Track boundaries as (x0, x1) column slices, left to right.
 
     The page is a grating, so the pitch comes from find_pitch(). Where to cut
@@ -332,14 +405,22 @@ def find_tracks(ink, pitch=None, min_pitch=6):
     Splitting on runs of white columns instead only works while the lanes never
     swing into the gaps. Pack the tracks tighter and they do, the profile never
     reaches paper, and the whole page reads as a single track.
+
+    The profile is summed along the ink's own lean, not straight down -- see
+    col_profile(). That is the only place on the page skew ever broke: pass
+    `lean` to override the measurement, 0.0 to sum straight down as this used
+    to.
     """
-    prof = ink.mean(0).astype(np.float64)
+    if lean is None:
+        leans = ink_lean(ink)
+        lean = min(leans, key=abs) if leans else 0.0
+    prof = col_profile(ink, lean)
     x0, x1 = inked_span(prof)
     p = prof[x0:x1]
     n = len(p)
 
     if pitch is None:
-        pitch = find_pitch(ink, x0, x1, min_pitch)
+        pitch = find_pitch(ink, x0, x1, min_pitch, lean=lean)
     if not np.isfinite(pitch) or not min_pitch <= pitch <= n:
         # No grating the estimate can believe in: read the ink as one lane
         # rather than slicing it into nonsense. A sheet with a single lane on

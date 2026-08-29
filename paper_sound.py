@@ -70,7 +70,7 @@ import wave
 
 import numpy as np
 
-from read_tracks import (cumsum_at, declick, find_tracks, highpass,
+from read_tracks import (cumsum_at, declick, find_tracks, highpass, ink_lean,
                          ink_rows, load_ink, odd_lane, resample, write_wav)
 
 # ------------------------------------------------------------------- defaults
@@ -345,36 +345,6 @@ def lane_centroid(ink, x0, x1, span, drift, narrow=2 * STROKE, sticky=STICKY,
     return rows, x0 + span / 2 + ramp + pos
 
 
-def ink_lean(ink, bands=8):
-    """How far the ink block itself leans, px per row, from each edge on its own.
-
-    Geometry rather than content: a sheared page carries its whole block of
-    ink over with it, so the leftmost and rightmost inked columns in the top
-    band of the page sit somewhere else in the bottom band, and the difference
-    is the shear. Nothing here asks what was printed, which is the point --
-    every other measurement of the skew in this file is a centroid of the
-    audio, and inherits the audio.
-
-    The two edges are returned separately, never averaged. One of them can be
-    something other than the sheet: `sheetB_scan` carries a blob in its top
-    band that puts its left edge 1343 px out while its right edge lands within
-    3 px of the truth. Whoever uses these takes the smaller one, so junk that
-    invents a lean is thrown out and junk that hides one costs only the head
-    start.
-    """
-    rows = len(ink)
-    band = max(rows // bands, 1)
-    strong = ink > (float(ink.max()) + np.median(ink[::16, ::16])) / 2
-    ends = []
-    for lo in (0, rows - band):
-        col = strong[lo:lo + band].sum(0)
-        lit = np.flatnonzero(col > col.max() * 0.02)
-        if not len(lit):
-            return []
-        ends.append((lit[0], lit[-1]))
-    return [(b - a) / (rows - band) for a, b in zip(*ends)]
-
-
 def strip_bend(mean, strips=STRIPS):
     """The page's own drift, a line per strip of rows, joined into one curve.
 
@@ -423,12 +393,16 @@ def lane_drift(ink, lanes, span, narrow=APERTURE, sticky=STICKY, strips=STRIPS):
          40 px       0.2703              1.0000
          42 px       0.0023             -0.0176
 
-    **The ceiling is the lane pitch, and it is not this function's.** At 40 px
-    of shear on a 38.7 px pitch the page cuts into twelve lanes where eleven
-    were printed: a lane at the top of the page is over its neighbour's columns
-    at the bottom, and no vertical cut can separate them. Past that nothing
-    aims its way out, which is why this warns instead. Below it, aiming the
-    first pass is the whole difference between 0.27 and 1.00.
+    **The ceiling that used to sit at one pitch is gone.** It was never this
+    function's: at 40 px of shear on a 38.7 px pitch the PROFILE that cuts the
+    lanes was summed straight down, so a lane at the top of the page landed on
+    its neighbour's columns at the bottom and the page cut into twelve lanes
+    where eleven were printed. That profile is now summed along the same lean
+    this pass is aimed with -- read_tracks.col_profile() -- and the same
+    synthetic sheet reads r=1.0000 at 42 px, at 240 px and at 1920 px, which is
+    16 degrees and off the platen long before it is off this reader. What is
+    left is the aim itself, and it is still the whole difference between 0.27
+    and 1.00 below where the cut used to fail.
 
     The strips are the second half, and they are worth having only from an
     aimed pass. Fitted cold they chase the content the mean did not cancel and
@@ -461,12 +435,6 @@ def lane_drift(ink, lanes, span, narrow=APERTURE, sticky=STICKY, strips=STRIPS):
     leans = ink_lean(ink)
     aim = min(leans, key=abs) if leans else 0.0
     rows = len(ink)
-    if leans and abs(aim) * rows >= span:
-        print(f"this sheet is sheared {abs(aim) * rows:.0f} px across the page "
-              f"against a lane pitch of {span:.0f} px -- a lane at one end is "
-              f"over its neighbour's columns at the other, and no vertical cut "
-              f"can separate them. The read past here is not a poorer read, it "
-              f"is nonsense. Rescan it straighter")
 
     flat = [p for p in (lane_centroid(ink, a, b, span, aim, narrow, sticky)
                         for a, b in lanes) if p is not None]
@@ -1498,13 +1466,11 @@ def selftest():
     # sticky window tracks 12 px on its own, which is why the value here is
     # 0.04 and not the 0.0025 a crooked sheet actually looks like.
     #
-    # ponytail: the ceiling past these is the lane pitch and it belongs to the
-    # cut, not to the fit -- at 40 px of shear on a 38.7 px pitch the page cuts
-    # into twelve lanes where eleven were printed. The sheets here lie at 3 to
-    # 36 px, so the most crooked sits at 0.8 of its own pitch. Raising that
-    # ceiling means cutting lanes along the skew instead of straight down,
-    # which is a different reader; until a sheet needs it, the page says so
-    # and the collapsed sheet below is the check on its saying it.
+    # The ceiling past these used to be the lane pitch, and it belonged to the
+    # cut rather than to the fit: at 40 px of shear on a 38.7 px pitch the page
+    # cut into twelve lanes where eleven were printed. It is gone -- the
+    # profile the grid is cut on is summed along the lean now -- and the sheets
+    # below it check that, at 48 and at 300 px.
     step0, nlanes = 39.0, 11
     for drawn in (0.0, 0.0025, 0.04):    # 0, 1.5 and 24 px down the sheet
         clocked = np.concatenate([pilot_lane(rate), sig[:(nlanes - 2) * rate],
@@ -1527,27 +1493,38 @@ def selftest():
                          highpass(sig[:(nlanes - 2) * rate], 31))[0, 1]
         assert rr > 0.95, f"skew {drawn:+.5f}: read back at only {rr:.4f}"
 
-    # And past the reader itself: 48 px of shear on a 39 px pitch, where a lane
-    # at one end of the page is over its neighbour's columns at the other. No
-    # aiming and no per-strip fit gets a sheet back from there -- the vertical
-    # cuts have stopped meaning anything -- so what is checked here is that it
-    # is SAID. Every other measurement on the page still agrees with itself,
-    # which is what makes silence here the expensive answer.
-    clocked = np.concatenate([pilot_lane(rate), sig[:(nlanes - 2) * rate],
-                              pilot_lane(rate)])
-    edges, _ = lay_out(clocked, rate, nlanes, step0, 0.08)
-    wide = int(np.ceil(max(r.max() for _, r in edges) + step0))
-    bent = trim_paper(render_page(edges, step0, wide) * 255)
-    said = _io.StringIO()
-    with contextlib.redirect_stdout(said):
-        got4 = read_curves_page(bent)[0]
-    m = min(len(got4) - 2 * rate, (nlanes - 2) * rate)
-    rr = np.corrcoef(highpass(got4[rate:rate + m], 31),
-                     highpass(sig[:m], 31))[0, 1]
-    assert rr < 0.9, f"a sheet past the pitch read back at {rr:.4f}"
-    assert "sheared" in said.getvalue(), (
-        f"a sheet sheared past its own pitch said nothing: "
-        f"{said.getvalue().strip()!r}")
+    # And past where the cut used to give up: 48 px of shear on a 39 px pitch,
+    # a lane at one end of the page over its neighbour's columns at the other,
+    # and 300 px, which is 27 degrees and further than a sheet of paper can be
+    # laid on a platen. Both read back whole. The column profile is summed
+    # along the ink's own lean instead of straight down (read_tracks.
+    # col_profile), so the periodicity the grid is cut on survives a shear the
+    # page cannot physically carry -- no pixel is resampled to do it, which is
+    # what the 8.6 dB white point says about touching the ink.
+    #
+    # This used to be the check that a hopeless sheet SAID so, and the warning
+    # it checked for is gone with the ceiling it named. What is left to say
+    # about skew is the fit leaving the sheet (SKEW_GAP, above), which is a
+    # broken measurement rather than a sheet past the format.
+    for shear in (0.08, 0.5):
+        clocked = np.concatenate([pilot_lane(rate), sig[:(nlanes - 2) * rate],
+                                  pilot_lane(rate)])
+        edges, _ = lay_out(clocked, rate, nlanes, step0, shear)
+        wide = int(np.ceil(max(r.max() for _, r in edges) + step0))
+        bent = trim_paper(render_page(edges, step0, wide) * 255)
+        said = _io.StringIO()
+        with contextlib.redirect_stdout(said):
+            got4, _, got_n = read_curves_page(bent)
+        assert got_n == nlanes, (
+            f"{shear * rate:.0f} px of shear cut {got_n} lanes of {nlanes}")
+        m = min(len(got4) - 2 * rate, (nlanes - 2) * rate)
+        rr = np.corrcoef(highpass(got4[rate:rate + m], 31),
+                         highpass(sig[:m], 31))[0, 1]
+        assert rr > 0.95, (
+            f"{shear * rate:.0f} px of shear read back at only {rr:.4f}")
+        assert "Rescan" not in said.getvalue(), (
+            f"{shear * rate:.0f} px of shear, read whole and called crooked: "
+            f"{said.getvalue().strip()!r}")
 
     # A PNG whose ancillary chunk carries a CRC its writer got wrong. One
     # scanner here does that to pHYs -- the chunk that says dpi and nothing

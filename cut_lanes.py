@@ -326,6 +326,17 @@ def cut(path, outdir, pitch=None, bleed=BLEED, turn=None, negative=NEGATIVE,
         if not heights:
             raise SystemExit(f"{path}: no lane on this sheet could be aimed at")
         rate = int(np.median(heights))
+        if speed and speed > 1:
+            # A whole number of SAMPLES, not just of rows. At two rows a sample
+            # an odd strip is half a sample short, and a reader that
+            # concatenates strips carries that half into the next lane: 59
+            # samples across a 118-lane sheet, which is a tenth of a second by
+            # the far edge. Measured on sheetD_scan2 through picky.py -- the
+            # same read scores 0.04 with the drift in it and 0.88 with it taken
+            # out, because correlation against the source is decided by single
+            # samples of offset. The strips are stretched to a common height
+            # anyway, so this costs one row of picture and nothing else.
+            rate -= rate % speed
     for k, (x0, x1) in enumerate(lanes, first):
         lo, hi = max(0, x0 - b), min(ink.shape[1], x1 + b)
         crop = ink[:, lo:hi]
@@ -521,9 +532,13 @@ def selftest():
         # clocks' period doubles in ROWS, so the same tone reads back as two
         # rows to the sample. The picture is not what this has to get right --
         # a strip is rows either way -- but the rates named under it are.
-        whole2 = np.concatenate([pilot_lane(sr, 2 * PILOT), sig,
-                                 pilot_lane(sr, 2 * PILOT_END)])
-        edges2, _ = lay_out(whole2, sr, n + 2, pitch, 0.0)
+        odd = sr + 1        # an ODD lane height: half a sample short at speed 2
+        sig2 = 0.5 * np.concatenate(
+            [np.sin(2 * np.pi * 3 * (k + 1) * np.arange(odd) / odd)
+             for k in range(n)])
+        whole2 = np.concatenate([pilot_lane(odd, 2 * PILOT), sig2,
+                                 pilot_lane(odd, 2 * PILOT_END)])
+        edges2, _ = lay_out(whole2, odd, n + 2, pitch, 0.0)
         w2 = int(np.ceil(max(r.max() for _, r in edges2) + pitch))
         two = 255 - np.round(render_page(edges2, pitch, w2) * 255).astype(np.uint8)
         out2 = os.path.join(tmp, "two")
@@ -534,10 +549,17 @@ def selftest():
             cut(os.path.join(tmp, "two.png"), out2)
         assert "two rows to the sample" in said.getvalue(), (
             f"a --rows 2 sheet was cut in silence: {said.getvalue().strip()!r}")
-        assert f"the audio on it is {sr} Hz" in said.getvalue(), (
+        # Whole samples, not whole rows: an odd strip at two rows a sample
+        # walks half a sample into the next lane for whoever concatenates them.
+        for k in range(1, n + 3):
+            with Image.open(os.path.join(out2, f"{k:0{PAD}d}.{FORMAT}")) as im:
+                assert im.size[1] % 2 == 0, (
+                    f"strip {k} of a --rows 2 sheet is {im.size[1]} rows, "
+                    f"which is half a sample short")
+        assert f"the audio on it is {odd - 1} Hz" in said.getvalue(), (
             f"a --rows 2 sheet named the wrong audio rate: "
             f"{said.getvalue().strip()!r}")
-        assert f"play it at {sr * 2} Hz" in said.getvalue(), (
+        assert f"play it at {(odd - 1) * 2} Hz" in said.getvalue(), (
             f"a --rows 2 sheet did not name the row rate a strip reader needs: "
             f"{said.getvalue().strip()!r}")
 

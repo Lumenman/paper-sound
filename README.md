@@ -53,12 +53,13 @@ why the scanning rules below are not a matter of taste.
 Print at 100%, actual size, no "fit to page" — the PNG carries its own dpi. If a
 sheet comes out faint, print it again darker; do not fix it afterwards.
 
-Lay the sheet against the guide. Lanes are cut as vertical columns, so skew
-costs more than it looks: at the defaults a sheet tolerates **0.33 degrees**,
-which is 1.6 mm between its top and bottom, and that is exactly one lane pitch.
-The scans here lay at 0.02 to 0.31 degrees, the most crooked of them at 80% of
-that budget. A wider pitch tolerates proportionally more (77.4 px takes 0.65
-degrees), a denser one less.
+Lay the sheet against the guide, though the budget for getting it wrong is now
+the glass rather than the reader: the grid is cut on a profile summed along the
+sheet's own lean, so a synthetic sheet sheared **16 degrees** still reads back
+at r=1.0000. What runs out first is the platen -- A4 turned on A4 glass stops
+fitting at about 1.2 degrees, its ink block alone at about 3. The scans here
+lay at 0.02 to 0.31 degrees. Until the profile followed the lean the limit was
+0.33 degrees, one lane pitch, and what failed there was the cut.
 
 Scan greyscale at the same dpi with **every adjustment off**: no auto-contrast,
 no levels, no white or black point, no sharpening, no deskew, not bitonal.
@@ -253,24 +254,25 @@ dirty, then it is the only thing that helps.
 
 ## Known limits
 
-- **The limit on crookedness is the lane pitch, and it belongs to the cut
-  rather than to the skew estimate.** Lanes are cut as vertical columns, so a
-  sheet sheared by more than one pitch across the page cannot be cut correctly
-  at all: a lane at the top of the page is over its neighbour's columns at the
-  bottom. Measured on 6570 rows at a 38.7 px pitch: up to 38 px of shear the
-  page cuts into the lanes it was printed with and reads back at r=1.0000, at
-  40 px the grid finds a lane that was never printed, at 42 px the read is
-  noise. **The sheet says so:** the shear is measured off the ink's own edges
-  -- a sheared page leans its ink block with it, and that measurement owes
-  nothing to what was printed -- and once it reaches the pitch, `read` prints a
-  warning. The sheets here lie at 3 to 36 px against pitches of 38.7 and 77.4,
-  so the most crooked of them sits at 0.8 of its own pitch. The drift estimate
-  itself is no longer one line down the page: the first pass is AIMED with that
-  edge measurement, and a fit per strip of rows goes on top. On paper that is
-  worth ±0.003 of r (five sheets up, two down, at most +0.13 dB, on the most
-  bent sheet here); what it is really for is the 40 px sheet, which read back
-  at 0.27 before and reads 1.0000 now. Past the pitch nothing recovers it, and
-  the fix there is cutting lanes along the skew, which this does not do.
+- **The limit on crookedness is the size of the glass.** It used to be the lane
+  pitch, and it belonged to the cut: lanes are cut as vertical columns, so a
+  sheet sheared by more than one pitch put a lane at the top of the page over
+  its neighbour's columns at the bottom, and the profile the grid is cut on --
+  summed straight down -- smeared into lanes that were never printed. That
+  profile is summed along the sheet's own lean now, which is index arithmetic
+  and costs no decibels: nothing is resampled, no sub-pixel position is
+  quantised. Measured on 6780 rows at a 38.7 px pitch, r against what was
+  printed: 42 px of shear read -0.0071 before and 1.0000 now, and so do 240 px
+  and 1920 px, the last of which is 16 degrees. The shear is measured off the
+  ink's own edges -- a sheared page leans its ink block with it, and that
+  measurement owes nothing to what was printed. Past this the ceiling is
+  physical: A4 turned on A4 glass stops fitting at about 1.2 degrees and the
+  ink block at about 3, so what is needed there is a bigger scanner and not a
+  different algorithm. The same edge measurement AIMS the drift estimate's
+  first pass, with a fit per strip of rows on top; on paper that is worth
+  ±0.003 of r (five sheets up, two down, at most +0.13 dB, on the most bent
+  sheet here), and what it is really for is the sheet at 40 px of shear, which
+  read back at 0.27 before it and 1.0000 after.
 - **The two clocks disagree by a slope**, as above. Riding the line between them
   handles it; what is left is the shared wiggle.
 - **Some of the carrier's headroom is still unspent.** A sheet that never left

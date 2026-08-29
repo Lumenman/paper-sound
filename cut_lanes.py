@@ -359,8 +359,16 @@ def cut(path, outdir, pitch=None, bleed=BLEED, turn=None, negative=NEGATIVE,
     # those rows are is the one thing about it that is not on its face.
     if rate is not None:
         if speed and speed > 1:
+            # Two rates, both named, because they are not the same number and
+            # naming one of them is how a sheet gets played at the wrong speed.
+            # The AUDIO rate is the strip's height whatever the sheet's speed --
+            # half as many samples, in half a second -- and it is what
+            # paper_sound writes. The ROW rate is what a reader that takes one
+            # row for one sample has to be given instead: picky.py and anything
+            # like it, which cannot know that two rows here are one sample.
             print(f"  one strip is {rate} rows and holds 1/{speed} of a second,"
-                  f" so the audio on it is {rate * speed} Hz")
+                  f" so the audio on it is {rate} Hz -- and a reader that takes"
+                  f" one row for one sample has to play it at {rate * speed} Hz")
         else:
             print(f"  one lane is one second: {rate} rows, so {rate} Hz")
     return len(lanes)
@@ -508,6 +516,30 @@ def selftest():
             assert a.shape[0] == sr, f"strip {k + 2} is {a.shape[0]} rows, not {sr}"
             r = np.corrcoef(wave(a), sig[k * sr:(k + 1) * sr])[0, 1]
             assert r > 0.999, f"strip {k + 2} reads back at r={r:+.4f}"
+
+        # A --rows 2 sheet, which is what every sheet on paper here is: the
+        # clocks' period doubles in ROWS, so the same tone reads back as two
+        # rows to the sample. The picture is not what this has to get right --
+        # a strip is rows either way -- but the rates named under it are.
+        whole2 = np.concatenate([pilot_lane(sr, 2 * PILOT), sig,
+                                 pilot_lane(sr, 2 * PILOT_END)])
+        edges2, _ = lay_out(whole2, sr, n + 2, pitch, 0.0)
+        w2 = int(np.ceil(max(r.max() for _, r in edges2) + pitch))
+        two = 255 - np.round(render_page(edges2, pitch, w2) * 255).astype(np.uint8)
+        out2 = os.path.join(tmp, "two")
+        os.makedirs(out2, exist_ok=True)
+        Image.fromarray(two).save(os.path.join(tmp, "two.png"), dpi=(DPI, DPI))
+        said = _io.StringIO()
+        with contextlib.redirect_stdout(said):
+            cut(os.path.join(tmp, "two.png"), out2)
+        assert "two rows to the sample" in said.getvalue(), (
+            f"a --rows 2 sheet was cut in silence: {said.getvalue().strip()!r}")
+        assert f"the audio on it is {sr} Hz" in said.getvalue(), (
+            f"a --rows 2 sheet named the wrong audio rate: "
+            f"{said.getvalue().strip()!r}")
+        assert f"play it at {sr * 2} Hz" in said.getvalue(), (
+            f"a --rows 2 sheet did not name the row rate a strip reader needs: "
+            f"{said.getvalue().strip()!r}")
 
         # The claim this file makes about its two containers, actually made.
         # It was printed for a long time on the strength of nobody having
@@ -663,7 +695,7 @@ def selftest():
           f"a broken pHYs CRC mends to the same strips; "
           f"a sheet 17.6 px crooked cuts to r > 0.999 as well; a loud one cuts "
           f"to strips and a full-swing one still says why it cannot; two sheets "
-          f"number on; "
+          f"number on; a --rows 2 sheet names both its rates; "
           f"pages of {n}, 30 and 120 lanes at 0.7 and 0.9 of full swing "
           f"still cut into as many")
 

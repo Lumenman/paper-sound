@@ -245,18 +245,24 @@ dirty, then it is the only thing that helps.
 
 ## Known limits
 
-- **The skew estimate collapses at 48 px of shear across the page**, and the
-  limit is in pixels of shear rather than pixels per row: the same three
-  numbers came back on sheets of 600, 2000 and 6570 rows. At 24 px the estimate
-  is exact, at 36 px it reads 8-60% low and the read holds, at 48 px it
-  collapses to zero and takes the read down to r=0.02-0.39. The sheets here lie
-  at 3 to 36 px, so the crooked ones are a third of the way to the cliff --
-  not the "factor of two of margin" this used to claim, which compared px
-  against px/row. **The sheet now says so:** the estimate is checked against
-  the ink's own edges -- a sheared page leans its ink block with it -- and a
-  disagreement past 15 px is printed as a warning. The upgrade, the day that
-  warning fires on a real sheet, is fitting per strip of rows rather than over
-  the whole page.
+- **The limit on crookedness is the lane pitch, and it belongs to the cut
+  rather than to the skew estimate.** Lanes are cut as vertical columns, so a
+  sheet sheared by more than one pitch across the page cannot be cut correctly
+  at all: a lane at the top of the page is over its neighbour's columns at the
+  bottom. Measured on 6570 rows at a 38.7 px pitch: up to 38 px of shear the
+  page cuts into the lanes it was printed with and reads back at r=1.0000, at
+  40 px the grid finds a lane that was never printed, at 42 px the read is
+  noise. **The sheet says so:** the shear is measured off the ink's own edges
+  -- a sheared page leans its ink block with it, and that measurement owes
+  nothing to what was printed -- and once it reaches the pitch, `read` prints a
+  warning. The sheets here lie at 3 to 36 px against pitches of 38.7 and 77.4,
+  so the most crooked of them sits at 0.8 of its own pitch. The drift estimate
+  itself is no longer one line down the page: the first pass is AIMED with that
+  edge measurement, and a fit per strip of rows goes on top. On paper that is
+  worth ±0.003 of r (five sheets up, two down, at most +0.13 dB, on the most
+  bent sheet here); what it is really for is the 40 px sheet, which read back
+  at 0.27 before and reads 1.0000 now. Past the pitch nothing recovers it, and
+  the fix there is cutting lanes along the skew, which this does not do.
 - **The two clocks disagree by a slope**, as above. Riding the line between them
   handles it; what is left is the shared wiggle.
 - **Some of the carrier's headroom is still unspent.** A sheet that never left

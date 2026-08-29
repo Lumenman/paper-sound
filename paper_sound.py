@@ -1640,6 +1640,17 @@ def selftest():
                 i += 12 + ln
             raise AssertionError(f"{name} not in the test PNG")
 
+        # A 16-bit greyscale scan, which is what a flatbed set to its best
+        # depth writes and what PIL's convert("L") turns into a blank sheet by
+        # clipping instead of scaling. The same page at both depths has to read
+        # back as the same page.
+        deep = os.path.join(tmp, "deep.png")
+        page8 = np.uint8(sheet_ink[:200, :200])
+        _Image.fromarray(page8.astype(np.uint16) * 257).save(deep)
+        assert np.abs(load_ink(deep).astype(int)
+                      - load_ink(bad).astype(int)).max() <= 1, (
+            "a 16-bit scan did not read back as the 8-bit page it is")
+
         end = chunk_at(b"pHYs")
         raw[end:end + 4] = bytes(4)          # the CRC, wrong on purpose
         open(bad, "wb").write(bytes(raw))

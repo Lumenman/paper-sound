@@ -81,11 +81,36 @@ def mend_png(path):
     return (bytes(d), mended) if mended else (None, [])
 
 
+def ink_of(im):
+    """One opened image -> ink intensity (paper 0, ink high), uint8.
+
+    A 16-bit greyscale scan does NOT survive PIL's convert("L"): that path
+    clips at 255 instead of scaling, so every pixel above 255 -- which on a
+    16-bit scan is the paper, the ink and everything between -- comes back
+    white and the page reads as blank. Measured on a 0..65535 gradient: the
+    first pixel converts, the rest read 0. A flatbed set to 16-bit greyscale is
+    an ordinary thing to hand this program, so it is scaled here instead.
+
+    ponytail: scaled DOWN to 8 bits rather than carried in float, because 8 is
+    what every measurement in this project was made at and the extra bits have
+    never been shown to be worth anything. The carrier is the sub-pixel
+    position in the anti-aliased edge, which 8 bits already resolves to about
+    1/256 of a pixel; if a 16-bit sheet ever measures better, this is the line
+    to change.
+    """
+    a = np.asarray(im)
+    if a.dtype == np.uint8:
+        return 255 - np.asarray(im.convert("L"))
+    a = a.astype(np.float64)
+    return (255 - np.round(a * (255.0 / (65535.0 if a.max() > 255 else 255.0)))
+            ).clip(0, 255).astype(np.uint8)
+
+
 def load_ink(path):
     """Grayscale page -> ink intensity (paper 0, ink high), uint8."""
     try:
         with Image.open(path) as im:      # a sheet at a time, and there are many
-            return 255 - np.asarray(im.convert("L"))
+            return ink_of(im)
     except UnidentifiedImageError:
         fixed, mended = mend_png(path)
         if fixed is None:
@@ -93,7 +118,7 @@ def load_ink(path):
         print(f"{path}: {', '.join(mended)} carries a CRC its writer computed "
               f"wrong; mended in memory, the file on disk is untouched")
         with Image.open(io.BytesIO(fixed)) as im:
-            return 255 - np.asarray(im.convert("L"))
+            return ink_of(im)
 
 
 def inked_span(prof, frac=INK):

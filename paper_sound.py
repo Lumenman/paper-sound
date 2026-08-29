@@ -70,8 +70,9 @@ import wave
 
 import numpy as np
 
-from read_tracks import (cumsum_at, declick, find_tracks, highpass, ink_lean,
-                         ink_rows, load_ink, odd_lane, resample, write_wav)
+from read_tracks import (HEADROOM, cumsum_at, declick, find_tracks, highpass,
+                         ink_lean, ink_rows, load_ink, odd_lane, resample,
+                         write_wav)
 
 # ------------------------------------------------------------------- defaults
 # Every default lives here; the command line only overrides them. Change a
@@ -720,7 +721,30 @@ def do_print(args):
     from PIL import Image
 
     signal, sr = read_wav(args.audio)
-    signal = signal / max(np.abs(signal).max(), 1e-9)
+    # Scaled by the same high percentile write_wav() reads back with, not by
+    # the peak. The excursion IS the carrier -- a sample is where the stroke
+    # sits across its lane -- so a source whose peak is one click prints every
+    # other sample as a fraction of the lane it could have had, and the sheet
+    # comes back quiet for a reason no scan of it can show. Measured through
+    # the scan model (box blur 5, noise 10/255), against audio carrying one
+    # click at full scale over music at 0.15: r 0.8953 by the peak, 0.9317 by
+    # the percentile, which is 2.1 dB for a defect the eye cannot see on the
+    # sheet. Clean and full-swing audio move by 0.0004, downwards, which is
+    # the clipping this costs.
+    #
+    # HEADROOM is the read side's own number and is measured there: a healthy
+    # file's peak sits 1.19 to 1.46 above its 99.9th percentile, so 1.3 clips
+    # 0.00% of music and only the click.
+    scale = np.percentile(np.abs(signal), 99.9) * HEADROOM
+    signal = np.clip(signal / scale, -1.0, 1.0) if scale else signal * 0.0
+    over = float(np.mean(np.abs(signal) >= 1.0))
+    if over > 0.0005:
+        # Audio compressed hard enough that its 99.9th percentile is nearly its
+        # peak is the one case this rule costs something, so it is said. Below
+        # that it is the click the rule is for.
+        print(f"NOTE: {over:.2%} of the samples print at the edge of their "
+              f"lane and are flattened there -- this audio is compressed hard "
+              f"enough that its 99.9th percentile is nearly its peak")
     width_px, rate = sheet_px(args.paper, args.dpi, args.margin_mm)
     pitch = args.pitch
     # Rows per sample. Everything below counts in ROWS -- a lane is `rate` rows

@@ -7,6 +7,7 @@ a printer and a flatbed do things no simulation of them predicted correctly.
 
     python bench.py sheet.png song.wav
     python bench.py sheet_01.png sheet_02.png song.wav
+    python bench.py --same scanA.png scanB.png scanC.png song.wav
 
 The last argument is the wav that was printed; everything before it is the
 scans, in playing order. It prints one line:
@@ -14,6 +15,19 @@ scans, in playing order. It prints one line:
     sheet.png   r=0.9383  lanes  57 at 6574 Hz  2 clocks  median 0.9354
                 below 0.5: 1/56  worst 0.28 0.79 0.82
                 below 0.5 at second 31
+
+`--same` says the scans are one sheet scanned more than once, rather than the
+pages of one recording, and adds a median line under them. It is there because
+one scan does not measure a sheet: two scans of sheetD, same settings, minutes
+apart, came back 1.95 dB apart, and the better of the two was the one whose
+carriage rippled worse. Anything smaller than that gap is the scanner talking,
+not the sheet -- so a difference worth reporting is a difference between
+medians of three, and the spread printed beside the median says whether the
+number is even worth having.
+
+Scan the three with the sheet lifted and laid down again between them. Left on
+the glass it is the same placement three times, and placement is half of what
+is being averaged out.
 
 The seconds are listed because WHERE they are is the diagnosis. Scattered
 singly across the page they are a per-lane fault -- look at the strips
@@ -91,6 +105,8 @@ def score(song, sr, truth, hp=BASELINE, lag=8):
 
 
 def main(argv):
+    same = "--same" in argv
+    argv = [a for a in argv if a != "--same"]
     if len(argv) < 2:
         raise SystemExit(__doc__.strip().split("\n\n")[2])
     *scans, truth = argv
@@ -98,6 +114,7 @@ def main(argv):
         if not os.path.exists(path):
             raise SystemExit(f"{path}: no such file")
 
+    rs = []
     for path in scans:
         ink = load_ink(path)
         if retouched(ink):
@@ -118,10 +135,18 @@ def main(argv):
               f"median {np.median(lanes):.4f}  "
               f"below 0.5: {(lanes < 0.5).sum():3d}/{len(lanes)}  "
               f"worst {' '.join(f'{v:.2f}' for v in np.sort(lanes)[:3])}")
+        rs.append(r)
         bad = np.flatnonzero(lanes < 0.5) + 1
         if len(bad):
             print(f"{'':20s} below 0.5 at second{'s' if len(bad) != 1 else ''} "
                   f"{runs(list(bad))}")
+
+    if same and len(rs) > 1:
+        db = [10 * np.log10(v * v / (1 - v * v)) for v in rs]
+        print(f"{'median of ' + str(len(rs)) + ' scans':20s} "
+              f"r={np.median(rs):.4f}  {np.median(db):5.2f} dB   "
+              f"spread {min(rs):.4f} to {max(rs):.4f}, "
+              f"{max(db) - min(db):.2f} dB")
 
 
 if __name__ == "__main__":

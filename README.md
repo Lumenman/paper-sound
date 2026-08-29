@@ -15,6 +15,7 @@ python paper_sound.py print song.wav -o sheet    # -> sheet_01.png, sheet_02.png
 python paper_sound.py read sheet_01.png -o back.wav
 python paper_sound.py selftest
 python bench.py sheet_01.png song.wav            # score a read against the original
+python bench.py --same a.png b.png c.png song.wav  # one sheet scanned thrice: the median
 ```
 
 A 120-second recording, on the defaults:
@@ -51,6 +52,13 @@ why the scanning rules below are not a matter of taste.
 
 Print at 100%, actual size, no "fit to page" — the PNG carries its own dpi. If a
 sheet comes out faint, print it again darker; do not fix it afterwards.
+
+Lay the sheet against the guide. Lanes are cut as vertical columns, so skew
+costs more than it looks: at the defaults a sheet tolerates **0.33 degrees**,
+which is 1.6 mm between its top and bottom, and that is exactly one lane pitch.
+The scans here lay at 0.02 to 0.31 degrees, the most crooked of them at 80% of
+that budget. A wider pitch tolerates proportionally more (77.4 px takes 0.65
+degrees), a denser one less.
 
 Scan greyscale at the same dpi with **every adjustment off**: no auto-contrast,
 no levels, no white or black point, no sharpening, no deskew, not bitonal.
@@ -276,7 +284,10 @@ dirty, then it is the only thing that helps.
   stepping around it is worth +2.1 dB (`--rows 2`, measured with the knob) at
   the price of half the sheet, which makes it a cost line rather than an exclusion; and the scanner's
   own 823 Hz stripe, +16.6 dB over the source inside the band, which nothing in
-  the reader suppresses. The remainder is not broken down: impulse noise,
+  the reader suppresses -- a periodicity of **8.00 scan rows**, which is the
+  glass rather than the print: it lands at an eighth of the sheet's paper-row
+  rate, so the same stripe sings at 1646 Hz on a `--rows 2` sheet, and another
+  scanner will have a period of its own. The remainder is not broken down: impulse noise,
   intensity gamma and plain print and scan grain, in proportions nobody has
   measured.
 - A sheet that should carry clocks and has none prints a warning — it was

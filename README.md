@@ -96,10 +96,19 @@ fitting at about 1.2 degrees, its ink block alone at about 3. The scans here
 lay at 0.02 to 0.31 degrees. Until the profile followed the lean the limit was
 0.33 degrees, one lane pitch, and what failed there was the cut.
 
-Scan greyscale at the same dpi with **every adjustment off**: no auto-contrast,
-no levels, no white or black point, no sharpening, no deskew, not bitonal.
-8-bit or 16-bit, either reads the same -- the depth is scaled on the way in and
-every number here was measured at 8.
+Scan at the same dpi with **every adjustment off**: no auto-contrast, no
+levels, no white or black point, no sharpening, no deskew, not bitonal. 8-bit or
+16-bit, either reads the same -- the depth is scaled on the way in and every
+number here was measured at 8.
+
+Greyscale or colour is the scanner's business rather than the format's, and it
+is worth trying both: on the flatbed here the greyscale mode tops out at 151 of
+255 between paper and ink while the colour mode reaches 219 in luma and 254 in
+red, and that range is the partial-coverage edge the sub-pixel position lives
+in. A colour scan costs 0.31 dB to the luma mix and three times the file; the
+loss goes away by reading one channel, and on four grey scans here the three
+channels came back byte-identical, so it costs nothing at all to hand this
+program a colour file.
 
 Setting a white point is the expensive one. It costs **8.6 dB, in silence, and
 cannot be undone**. Zeroing everything paler than 4 parts in 255 is enough to do

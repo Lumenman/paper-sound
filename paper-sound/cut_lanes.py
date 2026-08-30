@@ -82,9 +82,15 @@ APERTURE_MASK = APERTURE  # px of lane kept around the stroke, 0 = keep the
                         # tenths of what a wide window weighs is whatever else
                         # landed in that lane; paper_sound's own reader handles
                         # that by closing an APERTURE onto the stroke it just
-                        # found, and a picture cannot be told to do that
-                        # afterwards. Doing it here, to the pixels, puts that
-                        # read inside the file. Measured on 04.png against the
+                        # found. picky.py can now be told to do the same, with
+                        # --aperture, and on a strip cut without a mask that
+                        # is worth 0.6314 -> 0.9110 -- but not the whole of
+                        # what the mask is worth, because a strip does not
+                        # carry where the neighbouring lanes are, and on a
+                        # 41 px pitch the neighbour's stroke swings into the
+                        # bleed. Same sheet, same cut, mask alone: 0.9548.
+                        # Doing it here, to the pixels, puts that read inside
+                        # the file, and needs no reader to have the flag. Measured on 04.png against the
                         # audio that went onto it: 0.0042 off the plain crop,
                         # 0.5790 off the masked one, against 0.4711 for
                         # paper_sound's own read of the same sheet. It also
@@ -94,10 +100,14 @@ APERTURE_MASK = APERTURE  # px of lane kept around the stroke, 0 = keep the
                         # drifting out of time. Set to 0 for an untouched crop.
 NEGATIVE = True         # write the strips as negatives, ink bright on black.
                         # On, because the reader these are for weighs pixel
-                        # VALUE rather than ink: picky.py takes the centroid of
-                        # the image as given, so a paper-white strip has it
-                        # tracking the paper and the wave comes back mirrored --
-                        # exactly r = -1.000 against the audio that was printed.
+                        # VALUE rather than ink: a reader that takes the
+                        # centroid of the image as given has a paper-white
+                        # strip tracking the paper, and the wave comes back
+                        # mirrored -- exactly r = -1.000 against the audio that
+                        # was printed. picky.py now inverts such a frame
+                        # itself, so --no-negative no longer breaks it (0.3841
+                        # paper-white against 0.6314, on an unmasked cut); the
+                        # default stays on for every reader that does not.
                         # A mirrored mono wave is INAUDIBLE on its own, so this
                         # is the one default here that fixes nothing you can
                         # hear; it is on because the file is then right rather

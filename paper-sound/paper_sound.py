@@ -503,7 +503,7 @@ def trim_paper(ink, frac=0.02):
 
 
 def read_curves_page(ink, pitch=None, sr=None, narrow=None,
-                     sticky=STICKY):
+                     sticky=STICKY, estimator=None):
     """Read a page of curves: the ink's centroid in each lane, per row.
 
     `narrow` defaults to APERTURE scaled by the sheet's own pitch -- see the
@@ -560,7 +560,13 @@ def read_curves_page(ink, pitch=None, sr=None, narrow=None,
 
     drift = lane_drift(ink, lanes, span, narrow, sticky)
 
-    tracks = [lane_centroid(ink, b[0], b[1], span, drift, narrow, sticky)
+    # `estimator` swaps out what a lane's sample IS, and nothing else: the
+    # grid, the drift and the assembly below are the same either way, which is
+    # the only way two readouts can be compared on one scan. The drift pass
+    # above is deliberately NOT swapped -- it is the page's geometry, every
+    # lane agrees about it, and holding it fixed leaves one variable.
+    tracks = [(estimator or lane_centroid)(ink, b[0], b[1], span, drift,
+                                           narrow, sticky)
               for b in lanes]
     live = [len(t) for t in tracks if t is not None]
     if not live:

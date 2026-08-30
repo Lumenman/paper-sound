@@ -54,6 +54,26 @@ drop out of the answer. That blindness is the whole reason this shape was
 chosen, and it holds **only while the scanner's response is linear**, which is
 why the scanning rules below are not a matter of taste.
 
+## What the carrier does to the band
+
+Nothing. A row is not a slit — it does not integrate the sound over its own
+duration, it holds one stroke position, which is one sample. A sheet printed and
+read back without ever touching paper returns what went in, **flat to 0.05 dB**
+from nothing to Nyquist.
+
+The loss is real anyway and it belongs to the printer and the scanner. Ink
+spreads, glass blurs, both across rows, and rows here are time: measured on
+`sheetD_scan3` against what was printed, −2.0 dB at 1400 Hz, −3.8 at 2200,
+−7.0 at 2600.
+
+Which end to fix it at is not a matter of taste either. Lifted before printing,
+the boost is laid down before the paper adds its noise and costs only stroke
+excursion. Lifted on read it costs everything it buys, because the paper's noise
+is in the same band as the signal — measured over eight settings of an inverse
+filter, −0.11 dB on one sheet and +0.06 on another. So the curve sits in
+`prep4.bat`, on the print side, and it describes one printer and one scanner
+rather than this format; `spec.py` measures it for another pair.
+
 ## Printing and scanning
 
 Print at 100%, actual size, no "fit to page" — the PNG carries its own dpi. If a

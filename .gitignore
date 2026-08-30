@@ -8,3 +8,9 @@ __pycache__/
 
 # Bundled sox binaries
 sox/
+
+# Reference material read for ideas, not part of the program:
+# comopt (Streule 1999, GPL-3) and the optical-soundtrack A/B tool.
+comopt-master/
+optical-soundtrack-analysis-main/
+deskew_c/

@@ -141,6 +141,91 @@ def lane_axis(ink, x0, x1, span, drift, narrow=None, sticky=None,
     return pos - np.median(pos)
 
 
+def single_hump(prof):
+    """The largest profile that rises to one peak and falls, fitting under prof.
+
+    The running minimum outward from each row's own peak, both directions at
+    once: mask off the far side, accumulate, take whichever side owns the pixel.
+    """
+    cols = np.arange(prof.shape[1])
+    peak = np.argmax(prof, axis=1)[:, None]
+    right = np.minimum.accumulate(np.where(cols >= peak, prof, np.inf), axis=1)
+    left = np.minimum.accumulate(
+        np.where(cols <= peak, prof, np.inf)[:, ::-1], axis=1)[:, ::-1]
+    return np.where(cols >= peak, right, left)
+
+
+def lane_monotone(ink, x0, x1, span, drift, narrow=None, sticky=None,
+                  width=None):
+    """The centroid again, of a profile forced to be single-humped first.
+
+    A stroke's cross-profile can only rise to one peak and fall away from it.
+    Anything else in the window -- a speck of dust, a fibre, a dropout, the
+    neighbouring lane's edge -- is not the stroke, and a first moment weighs it
+    the same as ink, harder the further out it sits. So walk out from the peak
+    and take the running minimum in each direction: the largest single-humped
+    profile that fits under this row's, which is the bump gone and the flanks
+    untouched.
+
+    After MonotonyEnforcer in comopt (Streule 1999). His walks the violation
+    and replaces it with a straight line between the monotone points either
+    side; the running minimum clamps it flat instead, which is one numpy call
+    against a loop over rows and differs only inside the bump being deleted.
+
+    This is `despeckle`'s job done in the image rather than in the finished
+    trace, which is where the shape prior lives: in the trace a speck and a
+    fast transient are the same step, and despeckle costs 0.811 -> 0.753 on a
+    clean sheet for exactly that reason.
+    """
+    aimed = lane_centroid(ink, x0, x1, span, drift, narrow, sticky,
+                          absolute=True)
+    rel = lane_centroid(ink, x0, x1, span, drift, narrow, sticky)
+    if aimed is None or rel is None:
+        return None
+    rows, centre = aimed
+    geom = centre - rel
+    lane = ink[rows[0]:rows[1]].astype(np.float64)
+
+    w = int(round(width if width else WINDOW * span / 38.7))
+    w += w % 2
+    start = np.clip(np.round(centre - w / 2).astype(int), 0, lane.shape[1] - w)
+    prof = lane[np.arange(len(lane))[:, None], start[:, None] + np.arange(w)]
+
+    clean = single_hump(prof)
+    cols = np.arange(w)
+    den = clean.sum(axis=1)
+    pos = np.where(den > 0, (clean * (start[:, None] + cols)).sum(axis=1)
+                   / np.where(den > 0, den, 1.0), np.nan) - geom
+    good = np.flatnonzero(np.isfinite(pos))
+    if len(good) < len(pos) // 2:
+        return None
+    pos = np.interp(np.arange(len(pos)), good, pos[good])
+    return pos - np.median(pos)
+
+
+def blots(ink, n, radius, seed=0):
+    """Paste n discs of solid ink at random, the way dust and specks land.
+
+    The despeckle table in paper_sound was measured this way and the sheets it
+    used are not in the tree, so it is written down here instead of described.
+    """
+    rng = np.random.default_rng(seed)
+    out = ink.copy()
+    # As dark as this scan's own ink, not 255: a blot darker than any ink on
+    # the page moves ink_rows' own threshold, and the read fails at the grid
+    # instead of at the estimator, which measures nothing about either.
+    solid = int(ink.max())
+    h, w = out.shape
+    d = np.arange(-radius, radius + 1)
+    disc = (d[:, None] ** 2 + d[None, :] ** 2) <= radius ** 2
+    for y, x in zip(rng.integers(radius, h - radius, n),
+                    rng.integers(radius, w - radius, n)):
+        sl = (slice(y - radius, y + radius + 1),
+              slice(x - radius, x + radius + 1))
+        out[sl] = np.where(disc, solid, out[sl])
+    return out
+
+
 def curve(ink, floor):
     """A levels tool: crush everything paler than `floor`, restretch to 255.
 
@@ -166,10 +251,10 @@ def gamma(ink, g):
     return np.round(x ** g * 255).astype(np.uint8)
 
 
-def read_both(ink, truth):
-    """(r, per-lane r) for the centroid and for the axis, on the same pixels."""
+def read_both(ink, truth, other=None):
+    """(r, per-lane r) for the centroid and for `other`, on the same pixels."""
     out = []
-    for est in (None, lane_axis):
+    for est in (None, other or lane_axis):
         song, sr, n = read_curves_page(ink, estimator=est)
         song, n, js, turned, rows = pilot_retime(song, sr, n)
         sr = (sr // rows) * rows
@@ -191,6 +276,10 @@ def opt(argv, flag, cast=int):
 
 def main(argv):
     global TOPS, WINDOW
+    ests = {"axis": lane_axis, "monotone": lane_monotone}
+    which, argv = opt(argv, "--est", str)
+    other = ests[which[0]] if which else lane_axis
+    spots, argv = opt(argv, "--blots")
     floors, argv = opt(argv, "--curve")
     gammas, argv = opt(argv, "--gamma", float)
     tops, argv = opt(argv, "--tops")
@@ -201,25 +290,93 @@ def main(argv):
         WINDOW = widths[0]
     print(f"axis: window {WINDOW:g} px at pitch 38.7, ranks {TOPS} from the top")
     *scans, truth = argv
-    print(f"{'scan':20s} {'tone curve':13s} {'centroid':>17s} {'axis':>17s}"
-          f" {'axis - centroid':>16s}")
+    name = which[0] if which else "axis"
+    print(f"{'scan':20s} {'ink':13s} {'centroid':>17s} {name:>17s}"
+          f" {name + ' - centroid':>16s}")
     for path in scans:
         raw = load_ink(path)
         for bend in (("raw", None),
                      *(("crush <%d" % f, lambda k, f=f: curve(k, f))
                        for f in floors),
                      *(("gamma %g" % g, lambda k, g=g: gamma(k, g))
-                       for g in gammas)):
+                       for g in gammas),
+                     *(("%d blots r%d" % (spots[0], r),
+                        lambda k, r=r: blots(k, spots[0], r))
+                       for r in spots[1:])):
             note, how = bend
             ink = raw if how is None else how(raw)
             if retouched(raw) and how is None:
                 note = "already bent"
-            (rc, lc), (ra, la) = read_both(ink, truth)
+            (rc, lc), (ra, la) = read_both(ink, truth, other)
             print(f"{path:20s} {note:13s} "
                   f"{rc:7.4f} {db(rc):6.2f} dB {ra:7.4f} {db(ra):6.2f} dB"
                   f" {db(ra) - db(rc):+11.2f} dB")
             sys.stdout.flush()
 
 
+def selftest():
+    """The two kernels, on profiles whose answer is known by construction."""
+    x = np.arange(24.0)
+
+    def axis_of(q):
+        lo, hi = crossings(q[None], np.sort(q)[None, -3])
+        return (lo[0] + hi[0]) / 2
+
+    def centroid_of(q):
+        return (x * q).sum() / q.sum()
+
+    def bent(prof, g):
+        return (prof / prof.max()) ** g * 255.0
+
+    # A clean symmetric hump: both estimators are right, and both stay right
+    # under any curve. Nothing to choose between them here, which is the point
+    # -- this is the case the README's blindness argument already covers.
+    #
+    # It is also where the invariance is measurably approximate rather than
+    # exact, and the size of that is worth pinning down. A centre that lands on
+    # a sample or halfway between two is read to the last bit through every
+    # curve; one at x.3 is read 0.017 px out at gamma 0.5, 0.033 at gamma 2 and
+    # 0.064 at gamma 3. The crossings themselves do not move -- the linear
+    # interpolation BETWEEN samples does, because a bent profile is no longer
+    # straight between them, and the two flanks are not sampled alike.
+    for c in (11.0, 11.3, 11.5, 12.7):
+        p = np.clip(3 - np.abs(x - c), 0, None) * 60.0
+        for g in (1.0, 0.5, 2.0, 3.0):
+            assert abs(axis_of(bent(p, g)) - c) < 0.07, ("axis", c, g)
+
+    # Now one-sided grime beside the stroke -- paper, a fibre, the neighbouring
+    # lane's edge. The centroid is already 1.3 px out because a first moment
+    # weighs everything in its window, and a curve that LIFTS what is faint
+    # walks it out to 3.3 px. The axis never sees any of it: its levels are
+    # ranks near the peak, and the grime is not near the peak.
+    p = np.clip(3 - np.abs(x - 12), 0, None) * 60.0
+    p[17:] += 15.0
+    for g in (1.0, 0.5, 0.35, 2.0):
+        assert abs(axis_of(bent(p, g)) - 12) < 0.01, ("axis, grime", g)
+    assert abs(centroid_of(bent(p, 1.0)) - 12) > 1.0, "grime should bias a moment"
+    assert abs(centroid_of(bent(p, 0.35)) - 12) > 3.0, "a lift should bias it more"
+
+    # A speck beside the stroke is deleted and the stroke's own flanks are not
+    # touched -- which is the difference between this and a threshold.
+    p = np.clip(3 - np.abs(x - 12), 0, None) * 60.0
+    dirty = p.copy()
+    dirty[19:22] = 120.0
+    clean = single_hump(dirty[None])[0]
+    assert np.array_equal(clean[:16], p[:16]), "the stroke was not left alone"
+    assert clean[19:22].max() == 0.0, "the speck is still there"
+
+    # The blots land where they are asked to and nowhere else.
+    page = np.zeros((60, 60), np.uint8)
+    page[0, 0] = 200
+    assert (blots(page, 1, 3) != page).sum() == 29, "a r=3 disc is 29 px"
+
+    print("axis selftest ok: the axis holds to 0.01 px through grime and "
+          "gamma 0.35-3 where the centroid walks 3.3 px; single_hump keeps "
+          "the flanks")
+
+
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    if sys.argv[1:2] == ["selftest"]:
+        selftest()
+    else:
+        main(sys.argv[1:])

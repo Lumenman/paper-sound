@@ -1,6 +1,6 @@
 # paper_sound
 
-Print audio onto paper as a wandering line, scan the paper, get the audio back.
+Print audio onto paper as a wandering line (soundtrack optical), scan the paper, get the audio back.
 
 Nothing is encoded anywhere. **One lane is one second, one row is one sample**,
 so the sheet's printable height in pixels *is* the sample rate and its width is

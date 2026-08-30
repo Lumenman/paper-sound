@@ -153,6 +153,19 @@ def curve(ink, floor):
     return np.round(x * (255.0 / top if top else 1)).astype(np.uint8)
 
 
+def gamma(ink, g):
+    """A tone curve that bends the greyscale without throwing any of it away.
+
+    The clean test of the invariance claim, and the one `curve()` is not: a
+    levels tool CLIPS, and a clipped flank has no level left to cross, so
+    neither estimator can be invariant to it. Gamma is strictly monotone and
+    keeps every distinct value distinct, which is exactly the class the
+    symmetry axis is supposed to be blind to.
+    """
+    x = ink.astype(np.float64) / max(int(ink.max()), 1)
+    return np.round(x ** g * 255).astype(np.uint8)
+
+
 def read_both(ink, truth):
     """(r, per-lane r) for the centroid and for the axis, on the same pixels."""
     out = []
@@ -179,6 +192,7 @@ def opt(argv, flag, cast=int):
 def main(argv):
     global TOPS, WINDOW
     floors, argv = opt(argv, "--curve")
+    gammas, argv = opt(argv, "--gamma", float)
     tops, argv = opt(argv, "--tops")
     widths, argv = opt(argv, "--width", float)
     if tops:
@@ -191,10 +205,14 @@ def main(argv):
           f" {'axis - centroid':>16s}")
     for path in scans:
         raw = load_ink(path)
-        for floor in (0,) + floors:
-            ink = raw if not floor else curve(raw, floor)
-            note = "raw" if not floor else f"crush <{floor}"
-            if retouched(raw) and not floor:
+        for bend in (("raw", None),
+                     *(("crush <%d" % f, lambda k, f=f: curve(k, f))
+                       for f in floors),
+                     *(("gamma %g" % g, lambda k, g=g: gamma(k, g))
+                       for g in gammas)):
+            note, how = bend
+            ink = raw if how is None else how(raw)
+            if retouched(raw) and how is None:
                 note = "already bent"
             (rc, lc), (ra, la) = read_both(ink, truth)
             print(f"{path:20s} {note:13s} "

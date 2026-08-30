@@ -61,18 +61,27 @@ duration, it holds one stroke position, which is one sample. A sheet printed and
 read back without ever touching paper returns what went in, **flat to 0.05 dB**
 from nothing to Nyquist.
 
-The loss is real anyway and it belongs to the printer and the scanner. Ink
-spreads, glass blurs, both across rows, and rows here are time: measured on
-`sheetD_scan3` against what was printed, −2.0 dB at 1400 Hz, −3.8 at 2200,
-−7.0 at 2600.
+Paper is where the top goes, and it does not go the way a filter takes it. The
+stroke has to travel `A·2πf/sr` pixels from one row to the next, so speed costs
+amplitude and frequency together; ink spreads and glass blurs, both **across
+rows**, and rows here are time. While the step per row stays under the stroke's
+own width the neighbours overlap and the blur only smooths the position. Once it
+does not, the blur mixes two positions that have nothing to do with each other.
 
-Which end to fix it at is not a matter of taste either. Lifted before printing,
-the boost is laid down before the paper adds its noise and costs only stroke
-excursion. Lifted on read it costs everything it buys, because the paper's noise
-is in the same band as the signal — measured over eight settings of an inverse
-filter, −0.11 dB on one sheet and +0.06 on another. So the curve sits in
-`prep4.bat`, on the print side, and it describes one printer and one scanner
-rather than this format; `spec.py` measures it for another pair.
+So the ceiling is a **slew limit, not a bandwidth**, and it behaves like one.
+Measured on three sheets differing only in how much top was printed: at 2600 Hz
++4.3 dB of extra ink came back as +0.7, and at 3000 Hz +6.1 dB came back as
+−0.2, while below 1200 Hz the same sheets pass their differences through one for
+one. Pre-emphasis buys the first few dB and nothing after — `prep.bat`'s `+4` at
+2600 Hz was chosen by ear and sits on the knee, and `prep4.bat` is the record of
+what happens past it.
+
+What does buy top is `--rows 2`. It halves the step per row for the same audio,
+which lifts the ceiling by 6 dB; its measured **+2.1 dB** had no explanation
+until this, and the two-row sheet here loses half as much at 2600 Hz as the
+one-row sheets do. Lifting the top on **read** buys nothing at all — the paper's
+noise is in the same band as the signal, measured at −0.11 dB on one sheet and
++0.06 on another over eight settings of an inverse filter.
 
 ## Printing and scanning
 

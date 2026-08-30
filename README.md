@@ -127,6 +127,26 @@ image says which. If this read is disappointing, rescan with every adjustment
 off
 ```
 
+There is a second check beside it, for the damage that leaves no comb. A curve
+applied inside the scanner lands before the value is quantised, so the histogram
+comes back innocent -- and what gives it away instead is the stroke, because the
+sheet prints a known width. Ink on paper only ever spreads: a 4 px stroke comes
+back 4.32 to 4.59 px on the six scans here that read well, and 4.00 exactly on a
+sheet that never met a printer. Two scans from one flatbed read **3.2 px**,
+which paper cannot do, and read back at 0.10 and 0.64. `read` says so:
+
+```
+sheet.png: the stroke measures 3.2 px where it was printed 4.0, and ink on
+paper only ever spreads. Something in the scan is steepening the edges --
+sharpening, or the scanner's own contrast -- and the pixels it is squaring
+off are the sub-pixel position itself
+```
+
+The two checks see different things by construction: brightness and contrast do
+not move a half maximum, only curvature does, so a straight stretch leaves the
+stroke on 4.00 px and leaves a comb, while a curve inside the scanner leaves no
+comb and narrows the stroke.
+
 A scanner's own output fills its histogram; stretching it spreads the same
 values over a wider range and leaves a comb of empty bins. Measured: 0 empty
 bins on a sheet straight out of `print`, 4 on a raw scan, 128–133 on retouched

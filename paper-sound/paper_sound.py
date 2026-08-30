@@ -554,9 +554,9 @@ def read_curves_page(ink, pitch=None, sr=None, narrow=None,
     if narrow is None:
         narrow = APERTURE * span / PITCH
 
-    said = odd_lane(lanes)
-    if said:
-        print(said)
+    for said in (odd_lane(lanes), steepened(ink, lanes)):
+        if said:
+            print(said)
 
     drift = lane_drift(ink, lanes, span, narrow, sticky)
 
@@ -606,6 +606,90 @@ def read_curves_page(ink, pitch=None, sr=None, narrow=None,
               f"the sheet to read there -- silence in their place, so the "
               f"seconds after them stay where they belong")
     return np.concatenate(song), sr, len(song)
+
+
+SHARP = 0.95    # of the printed stroke width; below this the scan was steepened
+
+
+def stroke_fwhm(ink, lanes, rows=None, look=12, sample=12):
+    """Width of the stroke where it is half its own height, in pixels.
+
+    Rows are averaged about each row's OWN peak rather than about the lane's
+    centre, because the stroke moves: averaged about a fixed column it would
+    come back as wide as the excursion and measure the audio instead of the
+    ink. Lanes are sampled across the page so one bad one cannot set it.
+    """
+    if rows is None:
+        rows = (len(ink) // 4, len(ink) * 3 // 4)
+    step = max(1, (len(lanes) - 4) // sample)
+    prof = []
+    for t in range(2, len(lanes) - 2, step):
+        x0, x1 = lanes[t]
+        crop = ink[rows[0]:rows[1], x0:x1].astype(np.float64)
+        if crop.shape[1] < 2 * look + 1:
+            continue
+        for i, k in enumerate(crop.argmax(1)):
+            if look <= k < crop.shape[1] - look:
+                prof.append(crop[i, k - look:k + look + 1])
+    if len(prof) < 100:
+        return None
+    p = np.mean(prof, 0)
+    p = p - np.median(p)                       # bare paper to zero
+    if p.max() <= 0:
+        return None
+    half = p.max() / 2
+    on = np.flatnonzero(p >= half)
+    lo, hi = on[0], on[-1]
+    if lo == 0 or hi == len(p) - 1:
+        return None
+    left = lo - (p[lo] - half) / max(p[lo] - p[lo - 1], 1e-9)
+    right = hi + (p[hi] - half) / max(p[hi] - p[hi + 1], 1e-9)
+    return float(right - left)
+
+
+def steepened(ink, lanes, stroke=STROKE, limit=SHARP):
+    """Has this scan been sharpened, or its response steepened? -> note or None.
+
+    The sheet prints its own ruler. A stroke leaves the printer STROKE pixels
+    wide and can only come back WIDER: paper spreads ink and glass spreads
+    light, and neither has ever narrowed a line. So a stroke that measures
+    narrower than it was printed is not a property of the paper -- it is the
+    scanner steepening its response, pushing the partial-coverage pixels at the
+    stroke's edges towards black and towards white.
+
+    Those pixels are the whole of the sub-pixel position, so this is the same
+    damage a white point does, and it is worth a separate check because
+    `retouched` cannot see it: a curve applied inside the scanner is applied
+    BEFORE the value is quantised, so it leaves no comb of empty bins. Measured
+    on one such scan: 1 empty bin, and a stroke 3.2 px wide out of 4.
+
+    Measured widths, printed stroke 4 px: 4.00 on a sheet straight out of
+    `print`, 4.32 to 4.59 on six scans that read between 0.956 and 0.979, and
+    3.21 to 3.30 on the two that read 0.10 and 0.64. Nothing lands between 4.00
+    and 4.32, which is where the line goes.
+
+    The width expected is STROKE flat, not scaled by anything. The stroke is
+    the one thing here that does not follow the pitch: `--pitch` moves the
+    lane's walls and so its excursion, `--dpi` moves the sheet's rate, and
+    neither touches how wide the line is drawn. Scaling it by the pitch is the
+    obvious mistake and it accuses the widest sheet in this directory of a
+    defect it does not have -- sheetC_scan, pitch 76.9, reads a perfectly
+    ordinary 4.4 px.
+
+    What this does assume is a scan at the printed dpi, which the README asks
+    for anyway. Scanned at half of it a 4 px stroke arrives 2 px wide and this
+    will say so, which is not the worst thing wrong with such a scan.
+    """
+    want = stroke
+    got = stroke_fwhm(ink, lanes)
+    if got is None or got >= want * limit:
+        return None
+    return (f"the stroke measures {got:.1f} px where it was printed "
+            f"{want:.1f}, and ink on paper only ever spreads. Something in the "
+            f"scan is steepening the edges -- sharpening, or the scanner's own "
+            f"contrast -- and the pixels it is squaring off are the sub-pixel "
+            f"position itself. Rescan with every adjustment off, or on another "
+            f"scanner")
 
 
 def retouched(ink, comb=COMB):
@@ -1711,6 +1795,26 @@ def selftest():
     assert retouched(ink) is None, "a rendered sheet was called retouched"
     stretched = np.minimum(ink.astype(np.int32) * 3, 255).astype(np.uint8)
     assert retouched(stretched), "a 3x levels stretch was not spotted"
+
+    # A scan whose edges have been squared off, which retouched() cannot see:
+    # the curve below is applied before quantising, so it leaves no comb. What
+    # gives it away is the stroke, which comes back narrower than it was drawn
+    # -- and ink on paper has never done that.
+    grid = find_tracks(ink)
+    assert steepened(ink, grid) is None, "a rendered sheet was called steepened"
+    assert abs(stroke_fwhm(ink, grid) - STROKE) < 0.05, "drawn width moved"
+    hard = (255 * (ink / 255.0) ** 2).astype(np.uint8)
+    assert steepened(hard, grid), "squared-off edges were not spotted"
+    wide = (255 * (ink / 255.0) ** 0.5).astype(np.uint8)
+    assert steepened(wide, grid) is None, "a WIDENED stroke is not this defect"
+    # A straight stretch must not register, and this is the property that makes
+    # the check worth having: brightness and contrast do not move a half
+    # maximum, only CURVATURE does. 3x - 1.0 leaves the stroke on 4.00 px while
+    # leaving retouched()'s comb behind, so the two checks see different things
+    # by construction rather than by luck.
+    flat = (255 * np.clip(ink / 255.0 * 3 - 1.0, 0, 1)).astype(np.uint8)
+    assert steepened(flat, grid) is None, "a linear stretch was called steep"
+    assert retouched(flat), "the linear stretch should still leave a comb"
 
     # Something on the sheet that is not a lane, segmented as if it were: the
     # failure a mark printed beside the field causes. A mark six pixels wide

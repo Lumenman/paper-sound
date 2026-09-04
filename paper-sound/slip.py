@@ -58,16 +58,19 @@ the page. The crossover is near 0.65 px, and the vernier's 13 dB is against one
 lane a second where it spends two, so at equal paper it is nearer 10.
 
 That one number has now been measured, and it says do not print this. LAB 24.9
-put a cross sheet through two scanners: the blur DOWN the page is 1.09 px on
-one and 1.27 on the other, against a crossover of 0.65. Both are the bottom row
-of the table above -- the vernier at +2.9 against the stroke's +10.8. It loses,
-and it loses before anything modulated has had the chance to slip a cycle.
+put one cross sheet through each of two printers and read both on one scanner:
+the blur DOWN the page is 1.09 px at best and 1.27 at worst, against a crossover
+of 0.65. Both are the bottom row of the table above -- the vernier at +2.9
+against the stroke's +10.8. It loses, and it loses before anything modulated has
+had the chance to slip a cycle.
 
-Nor did the carriage kill it. The scanner whose glass is symmetric still reads
-1.09, so most of that blur is the PRINT, isotropic, and no better flatbed buys
-it back. A sharper printer might; nothing in this file can. So `sim` stays
-useful and `print` stays unprinted, until LAB 24.9's next sheet says the blur
-can be made smaller.
+The carriage is not what killed it. The glass is symmetric to within 0.25 px:
+one printer's sheet reads 1.05 down over across through the same glass on which
+the other's reads 0.57, and that 0.57 is the PRINTER, blurring along its own
+paper feed. Changing printers buys back 0.47 px of anisotropy and none of the
+1.09 that is left. Whether THAT is the glass or the toner is still open, and
+LAB 24.9 says a second scanner on these same two sheets settles it. So `sim`
+stays useful and `print` stays unprinted until it does.
 
 What this sheet does NOT settle: it prints no clocks, so it is scored against
 the source with a lag search and not retimed. The carriage ripple that
@@ -125,10 +128,10 @@ AMP = 14.0
 #
 # And 1.08 px is the HORIZONTAL blur, measured off a strip of vertical bars,
 # which is the only direction such a strip can measure. LAB 24.9 measured the
-# vertical one on a cross sheet: 1.09 px on a scanner whose glass is symmetric
-# and 1.27 on one whose carriage adds 0.47 px of its own. Hence --vblur, and
-# hence a default that is if anything optimistic: the real page is 1.09 both
-# ways at best.
+# vertical one on cross sheets: 1.09 px off a printer that is isotropic and
+# 1.27 off one that blurs 0.47 px harder along its paper feed. Hence --vblur,
+# and hence a default that is if anything optimistic: the best page measured
+# is 1.09 both ways.
 SIM_SIGMA = 1.08
 # Of 255, at full ink. LAB 24.6 read the paper at 9.3 +-2.3 of 255 with the ink
 # at 128, so the noise against full ink is 2.3 * 255/128 = 4.6. The rest of the

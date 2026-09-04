@@ -246,6 +246,22 @@ def measure(ink, label):
     blank = middle(cuts[BLOCKS.index("blank")])
     if solid <= 0:
         raise SystemExit(f"{label}: no ink -- is this the strip?")
+    # The blank block is bare paper and the solid blocks are full ink, so the
+    # one has to read far lighter than the other. When it does not, the block
+    # grid is not on the strip and every number below is arithmetic on the
+    # wrong pixels -- which is what a scan came back as in LAB 24.10, where the
+    # flatbed left a 50 px band of its own down the right edge of the page.
+    # That band is full height, so trim_paper() keeps it as a column of ink,
+    # and the strip is then measured 100 px wider than it is. Caught here
+    # rather than left to be read as a result: the first read of that scan
+    # reported paper at 203 of 255 against ink at 18 and printed a table.
+    if blank.mean() > solid / 4:
+        raise SystemExit(
+            f"{label}: the blank block reads {blank.mean():.0f} of ink against "
+            f"{solid:.0f} in the solid ones, so the block grid is not on the "
+            f"strip. Something that is neither paper nor strip survived the "
+            f"trim -- a scanner's edge band is the usual one. Crop the scan to "
+            f"the sheet and read it again")
 
     # The strip prints its own ruler: the reference block's period IS the
     # format's PITCH, so what it measures as is the scan's scale. Nothing here

@@ -350,7 +350,12 @@ dirty, then it is the only thing that helps.
   6.0 dB on a sheet at a non-default pitch, which is why the window now follows
   it. **Named but not won back:** vertical print/scan blur, measured on paper --
   stepping around it is worth +2.1 dB (`--rows 2`, measured with the knob) at
-  the price of half the sheet, which makes it a cost line rather than an exclusion; and the scanner's
+  the price of half the sheet, which makes it a cost line rather than an
+  exclusion. It has now been sized as well: a cross sheet through two printers
+  and two scanners puts the blur down the page between 1.10 and 1.44 px of
+  gaussian sigma, 1.10 in the best of the four corners (LAB.ru.md, 24.10). That
+  is the format's largest single loss, some 17 dB, and nothing here goes below
+  it. And the scanner's
   own 823 Hz stripe, +16.6 dB over the source inside the band, which nothing in
   the reader suppresses -- a periodicity of **8.00 scan rows**, which is the
   glass rather than the print: it lands at an eighth of the sheet's paper-row
@@ -358,6 +363,20 @@ dirty, then it is the only thing that helps.
   scanner will have a period of its own. The remainder is not broken down: impulse noise,
   intensity gamma and plain print and scan grain, in proportions nobody has
   measured.
+- **More than two edges in a lane: asked, and closed.** A stroke gives its lane
+  two edges; a grating of N bars would give 2N, which by the edge count is N
+  times the information. The paper does not hand it over. `grating.py` prints
+  nine gratings beside a reference stroke and measures what comes back: on
+  **still** bars the grating wins by 8 dB. But the format moves its grating with
+  the audio, and a moving one lives only while the vertical blur is small --
+  0.65 px is the crossover, against the 1.10 measured. No corner of the square
+  reaches it, so `slip.py` stays a simulator and the stroke stays the format.
+  Two more things came off that sheet: the blur's asymmetry belongs to the
+  **printer**, its paper feed rather than the scanner's carriage (one printer
+  reads 0.57 and 0.31 down over across on two pieces of glass, the other 1.05
+  and 1.20), and the flat contrast loss at coarse pitches is the **glass** and
+  its flare -- which the format never collects, because the scanner that flares
+  less is the softer one where the format lives.
 - A sheet that should carry clocks and has none prints a warning — it was
   printed without them, or the lane grid is miscounted. Finding only one prints
   a warning too, and names the lanes the two clocks sit on: a clock short of the
@@ -387,6 +406,8 @@ dirty, then it is the only thing that helps.
 | `paper_sound.py` | the format: print, read, selftest |
 | `read_tracks.py` | raster work — loading a page, cutting it into lanes, resampling |
 | `bench.py` | scores a read against the audio that was printed |
+| `grating.py` | gratings against the stroke: print a strip, read it, `--cross` for both directions on one sheet |
+| `slip.py` | the vernier, simulated: an instrument, not a format -- it never earned paper |
 
 `paper_sound.py selftest` prints a sheet, reads it back and checks the geometry,
 the resampler's anti-aliasing, the skew estimate against a sheet drawn crooked,

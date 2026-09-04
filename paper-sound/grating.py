@@ -334,26 +334,38 @@ def measure(ink, label):
     return out
 
 
-def split_cross(ink, frac=0.02):
+def split_cross(ink, frac=0.02, least=8):
     """A cross sheet cut into its two strips: (across the page, down the page).
 
-    Split on the blank band between them, which is the widest run of rows
-    carrying no ink. Nothing else on the sheet makes one -- the blank BLOCK is
-    a column of paper, and it leaves every row of the strip still inked
-    somewhere.
+    Split on the FIRST band of rows carrying no ink, not the longest one. The
+    across strip makes no such band -- its blank BLOCK is a column of paper and
+    leaves every row of the strip still inked somewhere -- but the down strip
+    is that same strip transposed, so its blank block IS a band of blank rows,
+    a block wide. On A4 that is 363 rows against the 236 of the gap between the
+    strips, and the longest run is then the wrong one: the split lands inside
+    the second strip and hands back the last solid block as a whole strip. The
+    selftest used to print an 80x120 sheet, whose block is narrower than the
+    gap, which is why it never said so; it now prints one wider than 140 mm,
+    where a block is the wider of the two.
+
+    Blank is counted in strong pixels rather than summed intensity, the way
+    trim_paper() counts it: bare paper scans at 8-10 of 255 of ink, and across
+    4600 columns that sums to 9% of an inked row -- over any threshold low
+    enough to still find a band.
     """
-    prof = ink.sum(1)
+    floor = np.median(ink[::16, ::16])
+    prof = (ink > (float(ink.max()) + floor) / 2).sum(1)
     off = prof < prof.max() * frac
-    best = run = 0
-    at = None
+    run = 0
     for i, v in enumerate(list(off) + [False]):
-        run = run + 1 if v else 0
-        if run > best:
-            best, at = run, i - run + 1
-    if at is None or best < 8:
-        raise SystemExit("no blank band across this scan -- is it a --cross "
-                         "sheet? A single strip is read without --cross")
-    return trim_paper(ink[:at]), trim_paper(ink[at + best:])
+        if v:
+            run += 1
+        elif run >= least:
+            return trim_paper(ink[:i - run]), trim_paper(ink[i:])
+        else:
+            run = 0
+    raise SystemExit("no blank band across this scan -- is it a --cross "
+                     "sheet? A single strip is read without --cross")
 
 
 def do_read(args):
@@ -476,14 +488,25 @@ def selftest():
         # This is the whole claim of --cross -- that one sheet can tell the two
         # directions apart -- and it is the one thing a sheet of straight bars
         # cannot say about itself either.
+        # Wider than 140 mm and at 300 dpi on purpose: a block is then wider
+        # than the 10 mm gap, which is the case A4 makes and the case that
+        # matters -- the down strip's blank block is a band of blank rows too,
+        # and it is the LONGER one. An 80x120 sheet hides that, and hid it
+        # until a real cross sheet came back off the glass (LAB 24.9).
         png = os.path.join(tmp, "cross.png")
-        args = argparse.Namespace(paper="80x120", dpi=600, margin_mm=5.0,
+        args = argparse.Namespace(paper="150x200", dpi=300, margin_mm=5.0,
                                   mm=15.0, out=png, cross=True)
         with contextlib.redirect_stdout(_io.StringIO()):
             do_print(args)
         page = trim_paper(load_ink(png)).astype(np.float64)
         soft = np.apply_along_axis(np.convolve, 0, page, np.ones(5) / 5, "same")
         across, down = split_cross(soft)
+        assert abs(across.shape[0] - mm_px(15, 300)) < 8, (
+            f"the across strip came back {across.shape[0]} rows tall, not "
+            f"{mm_px(15, 300)}: the sheet was split somewhere else")
+        assert down.shape[0] > 4 * across.shape[0], (
+            f"the down strip is {down.shape[0]} rows of a {page.shape[0]}-row "
+            f"page: the split landed inside it")
         with contextlib.redirect_stdout(_io.StringIO()):
             a, d = measure(across, "across"), measure(down.T, "down")
         for (spec, ca, _, _), (_, cd, _, _) in zip(a, d):

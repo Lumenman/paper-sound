@@ -57,15 +57,17 @@ is small, and loses to it by 8 dB if that blur is the same as the blur across
 the page. The crossover is near 0.65 px, and the vernier's 13 dB is against one
 lane a second where it spends two, so at equal paper it is nearer 10.
 
-Which means the whole question is now one number that nobody here has measured.
-LAB 24.6's sigma 1.08 came off a strip of VERTICAL bars, and a strip of
-vertical bars can only measure the blur across the page. A flatbed has no
-reason to be symmetric -- its carriage moves down the page, and motion blurs.
+That one number has now been measured, and it says do not print this. LAB 24.9
+put a cross sheet through two scanners: the blur DOWN the page is 1.09 px on
+one and 1.27 on the other, against a crossover of 0.65. Both are the bottom row
+of the table above -- the vernier at +2.9 against the stroke's +10.8. It loses,
+and it loses before anything modulated has had the chance to slip a cycle.
 
-So the sheet to print first is not this one. It is strip.png turned 90 degrees:
-the same nine gratings, the same grating.py read on a transposed scan, and the
-answer is the vertical MTF. One sheet, one pass, and it decides whether this
-file is worth any paper at all.
+Nor did the carriage kill it. The scanner whose glass is symmetric still reads
+1.09, so most of that blur is the PRINT, isotropic, and no better flatbed buys
+it back. A sharper printer might; nothing in this file can. So `sim` stays
+useful and `print` stays unprinted, until LAB 24.9's next sheet says the blur
+can be made smaller.
 
 What this sheet does NOT settle: it prints no clocks, so it is scored against
 the source with a lag search and not retimed. The carriage ripple that
@@ -121,11 +123,12 @@ AMP = 14.0
 # +41.8 dB against the stroke's +27.1 at vertical sigma 0, and +3.4 against
 # +10.8 at 1.08. The crossover is near 0.6.
 #
-# And 1.08 px is the HORIZONTAL blur. LAB 24.6 measured it off a strip of
-# vertical bars, which is the only direction such a strip can measure. Nothing
-# in this project has ever measured the vertical one, and a flatbed has no
-# reason to be symmetric -- its carriage moves that way. Hence --vblur, and
-# hence the sheet at the end of the docstring that ought to be printed first.
+# And 1.08 px is the HORIZONTAL blur, measured off a strip of vertical bars,
+# which is the only direction such a strip can measure. LAB 24.9 measured the
+# vertical one on a cross sheet: 1.09 px on a scanner whose glass is symmetric
+# and 1.27 on one whose carriage adds 0.47 px of its own. Hence --vblur, and
+# hence a default that is if anything optimistic: the real page is 1.09 both
+# ways at best.
 SIM_SIGMA = 1.08
 # Of 255, at full ink. LAB 24.6 read the paper at 9.3 +-2.3 of 255 with the ink
 # at 128, so the noise against full ink is 2.3 * 255/128 = 4.6. The rest of the

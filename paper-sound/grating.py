@@ -132,13 +132,31 @@ def do_print(args):
     paper_w, paper_h = paper_mm(args.paper)
     sheet_w, sheet_h = mm_px(paper_w, args.dpi), mm_px(paper_h, args.dpi)
     page = np.zeros((sheet_h, sheet_w), np.float32)
-    y, x = (sheet_h - rows) // 2, (sheet_w - width) // 2
-    page[y:y + rows, x:x + width] = strip
-    out = args.out or "strip.png"
+    if getattr(args, "cross", False):
+        # The same strip twice, the second one transposed, on ONE sheet. LAB
+        # 24.6 measured this paper's blur off vertical bars, which is the only
+        # direction vertical bars can measure -- and a flatbed's carriage moves
+        # the other way, so there is no reason for the two to agree. Two sheets
+        # would answer it too and would answer it wrong: the difference between
+        # two passes of the glass is the size of the thing being measured. On
+        # one sheet in one pass it divides out.
+        gap = mm_px(10, args.dpi)
+        tall = strip.T
+        h = rows + gap + tall.shape[0]
+        y = (sheet_h - h) // 2
+        x = (sheet_w - width) // 2
+        page[y:y + rows, x:x + width] = strip
+        page[y + rows + gap:y + h, x:x + tall.shape[1]] = tall
+    else:
+        y, x = (sheet_h - rows) // 2, (sheet_w - width) // 2
+        page[y:y + rows, x:x + width] = strip
+    out = args.out or ("cross.png" if getattr(args, "cross", False)
+                       else "strip.png")
     Image.fromarray(255 - np.round(page * 255).astype(np.uint8)).save(
         out, dpi=(args.dpi, args.dpi))
     print(f"{out}: {len(BLOCKS)} blocks of {bw:.0f} px, ink {width}x{rows} px "
-          f"= {width * 25.4 / args.dpi:.0f}x{args.mm:g} mm at {args.dpi} dpi")
+          f"= {width * 25.4 / args.dpi:.0f}x{args.mm:g} mm at {args.dpi} dpi"
+          f"{', twice, the second one turned' if getattr(args, 'cross', False) else ''}")
     print("  " + "  ".join(named(s) for s in BLOCKS))
     print(f"  print at 100%, scan at {args.dpi} dpi greyscale with every "
           f"adjustment off -- the same rules as a sheet, and for the same "
@@ -216,8 +234,8 @@ def middle(crop):
     return crop[:, crop.shape[1] // 4:crop.shape[1] * 3 // 4]
 
 
-def do_read(args):
-    ink = trim_paper(load_ink(args.scan)).astype(np.float64)
+def measure(ink, label):
+    """One strip of blocks -> its table, and the rows behind it."""
     rows, width = ink.shape
     bw = width / len(BLOCKS)
     cuts = [ink[:, int(round(i * bw)):int(round((i + 1) * bw))]
@@ -227,7 +245,7 @@ def do_read(args):
                            for i, s in enumerate(BLOCKS) if s == "solid"]))
     blank = middle(cuts[BLOCKS.index("blank")])
     if solid <= 0:
-        raise SystemExit(f"{args.scan}: no ink -- is this the strip?")
+        raise SystemExit(f"{label}: no ink -- is this the strip?")
 
     # The strip prints its own ruler: the reference block's period IS the
     # format's PITCH, so what it measures as is the scan's scale. Nothing here
@@ -237,7 +255,7 @@ def do_read(args):
     scale = pitch_px / PITCH
     narrow = APERTURE * scale
 
-    print(f"{args.scan}: {width}x{rows} px of ink, {len(BLOCKS)} blocks of "
+    print(f"{label}: {width}x{rows} px of ink, {len(BLOCKS)} blocks of "
           f"{bw:.0f} px, scale {scale:.4f}")
     print(f"  ink {solid:.0f} solid, paper {blank.mean():.1f} "
           f"+-{blank.std():.1f} of 255")
@@ -300,11 +318,11 @@ def do_read(args):
         print(f"  the stroke stands still to {ref_sigma:.1e} px, so this strip "
               f"has never been printed. Contrast is the rasteriser and nothing "
               f"else; the dB column needs paper")
-        return
+        return out
 
     fine = [r for r in out if r[0] != "stroke" and r[3] > 0]
     if not fine:
-        return
+        return out
     spec, contrast, lam, sigma = min(fine, key=lambda r: r[3])
     swing = 2 * ((PITCH - STROKE) / 2 - 1.5)
     print(f"  best: {spec:g} px, {20 * np.log10(ref_sigma / sigma):+.2f} dB "
@@ -313,6 +331,65 @@ def do_read(args):
           f"{swing / spec:.1f} times across the format's {swing:.1f} px of "
           f"excursion -- so the sample has to move less than {spec / 2:.2f} px "
           f"a row for the unwrap to hold. It moves about 0.2")
+    return out
+
+
+def split_cross(ink, frac=0.02):
+    """A cross sheet cut into its two strips: (across the page, down the page).
+
+    Split on the blank band between them, which is the widest run of rows
+    carrying no ink. Nothing else on the sheet makes one -- the blank BLOCK is
+    a column of paper, and it leaves every row of the strip still inked
+    somewhere.
+    """
+    prof = ink.sum(1)
+    off = prof < prof.max() * frac
+    best = run = 0
+    at = None
+    for i, v in enumerate(list(off) + [False]):
+        run = run + 1 if v else 0
+        if run > best:
+            best, at = run, i - run + 1
+    if at is None or best < 8:
+        raise SystemExit("no blank band across this scan -- is it a --cross "
+                         "sheet? A single strip is read without --cross")
+    return trim_paper(ink[:at]), trim_paper(ink[at + best:])
+
+
+def do_read(args):
+    ink = trim_paper(load_ink(args.scan)).astype(np.float64)
+    if not args.cross:
+        measure(ink, args.scan)
+        return
+
+    across, down = split_cross(ink)
+    # Transposed, not rotated: `print --cross` lays the second strip down with
+    # a plain transpose, so this is exactly its inverse and the blocks come
+    # back in the order they were drawn in. A rotation would hand them back
+    # mirrored, and the block grid is positional.
+    a = measure(across, f"{args.scan} across the page")
+    print()
+    d = measure(down.T, f"{args.scan} down the page")
+
+    # The one number this sheet exists for. Both strips are the same ink on the
+    # same paper in the same pass, so what is left when one contrast is divided
+    # by the other is the scanner's own asymmetry and nothing else -- no dpi,
+    # no exposure, no second scan to disagree with the first.
+    print()
+    print(f"  {'block':>8} {'across':>9} {'down':>9} {'down/across':>12}")
+    for (spec, ca, _, _), (_, cd, _, _) in zip(a, d):
+        print(f"  {named(spec):>8} {ca:9.3f} {cd:9.3f} {cd / ca:12.3f}"
+              if ca else "")
+    fine = [(s_, ca, cd) for (s_, ca, _, _), (_, cd, _, _) in zip(a, d)
+            if s_ != "stroke" and ca > 0.02]
+    if not fine:
+        return
+    worst = min(fine, key=lambda r: r[2] / r[1])
+    print(f"  the glass is {'' if worst[2] < worst[1] else 'NOT '}softer down "
+          f"the page: at {worst[0]:g} px it keeps {worst[2] / worst[1]:.2f} of "
+          f"what it keeps across")
+    print("  slip.py needs this: its vernier beats the stroke by 13 dB when "
+          "the blur down the page is small and loses by 8 when it is not")
 
 
 def selftest():
@@ -393,6 +470,28 @@ def selftest():
         _, pos = per_row(crop, refine(crop, 6.1))
         s = scatter(pos)
         assert 0.0005 < s < 0.5, f"a blurred, noisy 6 px grating wanders {s:.3f} px"
+
+        # The cross sheet, end to end: print both strips, blur the page HARDER
+        # down than across, split it, read both, and check the ratio says so.
+        # This is the whole claim of --cross -- that one sheet can tell the two
+        # directions apart -- and it is the one thing a sheet of straight bars
+        # cannot say about itself either.
+        png = os.path.join(tmp, "cross.png")
+        args = argparse.Namespace(paper="80x120", dpi=600, margin_mm=5.0,
+                                  mm=15.0, out=png, cross=True)
+        with contextlib.redirect_stdout(_io.StringIO()):
+            do_print(args)
+        page = trim_paper(load_ink(png)).astype(np.float64)
+        soft = np.apply_along_axis(np.convolve, 0, page, np.ones(5) / 5, "same")
+        across, down = split_cross(soft)
+        with contextlib.redirect_stdout(_io.StringIO()):
+            a, d = measure(across, "across"), measure(down.T, "down")
+        for (spec, ca, _, _), (_, cd, _, _) in zip(a, d):
+            if spec == "stroke" or ca < 0.1:
+                continue
+            assert cd < ca * 0.95, (
+                f"{spec} px reads {cd:.3f} down against {ca:.3f} across, and "
+                f"the page was blurred five pixels down and none across")
     print("grating selftest ok")
 
 
@@ -410,9 +509,16 @@ def main():
                     help=f"(default {MARGIN_MM:g})")
     pr.add_argument("--mm", type=float, default=50.0,
                     help="height of the strip in mm (default 50)")
+    pr.add_argument("--cross", action="store_true",
+                    help="print the strip twice on one sheet, the second one "
+                         "turned, to measure the blur down the page against "
+                         "the blur across it")
 
     rd = sub.add_parser("read", help="a scan of the strip -> contrast and noise")
     rd.add_argument("scan")
+    rd.add_argument("--cross", action="store_true",
+                    help="the scan is a --cross sheet: read both strips and "
+                         "divide one by the other")
 
     sub.add_parser("selftest", help="draw the strip, blur it, read it, check it")
 

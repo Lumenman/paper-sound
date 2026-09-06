@@ -129,14 +129,22 @@ def main(argv):
         joins = np.arange(1, round(len(song) / (sr // rows))) * (sr // rows)
         song = declick(highpass(song, BASELINE), joins, DECLICK)
         r, lanes = score(song, sr, truth)
+        # A lost lane is the failure this line is for, and it was the one
+        # failure it could not see: read_curves_page pads it with silence,
+        # correlation against silence is NaN, and `NaN < 0.5` is False -- so
+        # the second that went missing entirely was counted as passing, and
+        # one of them turned the median into NaN as well.
+        flat = int((~np.isfinite(lanes)).sum())
+        bad = ~np.isfinite(lanes) | (lanes < 0.5)
         print(f"{path:20s} r={r:.4f}  lanes {n:3d} at {sr} Hz  "
               f"{'' if rows == 1 else f'{rows} rows a sample  '}"
               f"{len(js)} clock{'s' if len(js) != 1 else ''}  "
-              f"median {np.median(lanes):.4f}  "
-              f"below 0.5: {(lanes < 0.5).sum():3d}/{len(lanes)}  "
+              f"median {np.nanmedian(lanes):.4f}  "
+              f"below 0.5: {bad.sum():3d}/{len(lanes)}"
+              f"{f' ({flat} flat)' if flat else ''}  "
               f"worst {' '.join(f'{v:.2f}' for v in np.sort(lanes)[:3])}")
         rs.append(r)
-        bad = np.flatnonzero(lanes < 0.5) + 1
+        bad = np.flatnonzero(bad) + 1
         if len(bad):
             print(f"{'':20s} below 0.5 at second{'s' if len(bad) != 1 else ''} "
                   f"{runs(list(bad))}")

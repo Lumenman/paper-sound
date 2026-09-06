@@ -106,6 +106,10 @@ def lane_axis(ink, x0, x1, span, drift, narrow=None, sticky=None,
 
     w = int(round(width if width else WINDOW * span / 38.7))
     w += w % 2                              # even, so the window has a centre
+    w = min(w, lane.shape[1] - lane.shape[1] % 2)   # --width can ask for more
+    if w < 4:                               # lane than there is, and a window
+        return None                         # wider than the lane clips to a
+                                            # NEGATIVE start below
     start = np.clip(np.round(centre - w / 2).astype(int), 0, lane.shape[1] - w)
     prof = lane[np.arange(len(lane))[:, None], start[:, None] + np.arange(w)]
 
@@ -188,6 +192,9 @@ def lane_monotone(ink, x0, x1, span, drift, narrow=None, sticky=None,
 
     w = int(round(width if width else WINDOW * span / 38.7))
     w += w % 2
+    w = min(w, lane.shape[1] - lane.shape[1] % 2)   # see lane_axis()
+    if w < 4:
+        return None
     start = np.clip(np.round(centre - w / 2).astype(int), 0, lane.shape[1] - w)
     prof = lane[np.arange(len(lane))[:, None], start[:, None] + np.arange(w)]
 

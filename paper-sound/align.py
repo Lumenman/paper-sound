@@ -24,11 +24,17 @@ def run(got_path, ref_path, span=3.0):
     a, b = highpass(got, BASELINE), highpass(ref, BASELINE)
     w = int(span * sr)
     out = []
-    for i in range(0, len(a) - sr, sr):
+    for i in range(0, len(a) - sr + 1, sr):
         x = a[i:i + sr]
         lo, hi = max(0, i - w), min(len(b), i + sr + w)
-        if hi - lo < sr + 2 or x.std() == 0:
+        if hi - lo < sr + 2:
             break
+        if x.std() < 1e-12:
+            # A silent second has no lag to find, but it is not the end of the
+            # file: this used to `break`, so one pause in the music stopped the
+            # walk and every second after it went unreported as if clean.
+            out.append((i // sr, float("nan"), float("nan")))
+            continue
         c = norm_xcorr(x, b[lo:hi])
         j = int(np.argmax(c))
         out.append((i // sr, float(c[j]), (lo + j - i) / sr))
@@ -41,6 +47,6 @@ if __name__ == "__main__":
         res = run(g, r)
         rr = np.array([v for _, v, _ in res])
         lg = np.array([d for _, _, d in res])
-        print(f"{g} vs {r}: {len(res)} s, median r {np.median(rr):.4f}")
+        print(f"{g} vs {r}: {len(res)} s, median r {np.nanmedian(rr):.4f}")
         print("  r    :", " ".join(f"{v:.2f}" for v in rr))
         print("  lag s:", " ".join(f"{v:+.2f}" for v in lg))

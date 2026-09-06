@@ -4,9 +4,11 @@ import numpy as np
 from paper_sound import BASELINE, highpass, read_wav, to_rate
 
 def avg_spec(x, sr, n=8192):
+    if len(x) < n:
+        raise ValueError(f"{len(x)} samples is shorter than the {n}-point FFT")
     w = np.hanning(n)
     segs = [np.abs(np.fft.rfft(x[i:i+n] * w)) ** 2
-            for i in range(0, len(x) - n, n // 2)]
+            for i in range(0, len(x) - n + 1, n // 2)]
     return np.fft.rfftfreq(n, 1 / sr), np.mean(segs, 0)
 
 def report(got, ref, label, top=8):

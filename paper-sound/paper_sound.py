@@ -71,8 +71,8 @@ import wave
 import numpy as np
 
 from read_tracks import (HEADROOM, cumsum_at, declick, find_tracks, highpass,
-                         ink_lean, ink_rows, load_ink, odd_lane, resample,
-                         write_wav)
+                         ink_lean, ink_level, ink_rows, load_ink, odd_lane,
+                         resample, write_wav)
 
 # ------------------------------------------------------------------- defaults
 # Every default lives here; the command line only overrides them. Change a
@@ -485,8 +485,8 @@ def trim_paper(ink, frac=0.02):
     while True:
         before = ink.shape
         for _ in range(2):   # rows, then columns; two transposes is identity
-            floor = np.median(ink[::16, ::16])
-            strong = (ink > (float(ink.max()) + floor) / 2).sum(1)
+            floor = float(np.median(ink[::16, ::16]))
+            strong = (ink > ink_level(ink, floor)).sum(1)
             lit = np.flatnonzero(strong > strong.max() * frac)
             # Kept low on purpose: the blur of print and scan fades the first
             # and last rows of ink into the paper, and those rows are samples.
@@ -512,7 +512,10 @@ def read_curves_page(ink, pitch=None, sr=None, narrow=None,
 
     The centroid needs no baseline and no threshold -- it is measured against
     the lane's own centre -- and it is blind to how much ink landed, so print
-    density, exposure and gamma drop out of the answer entirely.
+    density and exposure drop out of the answer. Gamma does not: a curved tone
+    response reweights the pixels either side of the stroke against each other,
+    and only a symmetric profile is spared. See the head of this file, which
+    says it right, and axis.py, which exists because of it.
 
     Skew cannot be read by cross-correlating strips of the page against the
     top strip, which is the obvious way and works only while something in the
@@ -1274,6 +1277,29 @@ def pilot_retime(song, sr, n, pilot=True, rows=None):
     js = [j for _, j, _, _ in got]
     if not js:
         return thin(song, sr, rows or 1), n, js, turned, rows or 1
+    if len(js) == 1:
+        # One clock is the sheet saying something went wrong at the other end,
+        # and it used to say it in silence. A clock is the FIRST lane and the
+        # LAST, so if an end lane is gone from the grid the clock goes with it
+        # -- and that is the one loss the reader cannot make up. A hole in the
+        # middle leaves a gap in a regular grid and is measured from its
+        # neighbours; an end has no far side to measure from, so nothing puts
+        # the silence back, the read comes home a second short, and every
+        # second past that end is one out while still sounding like the
+        # recording. Cut sheetD_scan1 down by one lane's width and it reads 119
+        # lanes, 118 seconds, and says nothing at all about the second it lost.
+        #
+        # It is not proof: a clock lane damaged on the paper reads as no clock
+        # while its lane is still there and still counted, and 04.png here is
+        # that -- one clock, and four lanes of scanner edge past it. Both
+        # causes live at the same end of the sheet, which is what to say.
+        end = "right" if got[0][0] else "left"
+        print(f"only the {end}-hand clock read back as a clock. Either the "
+              f"other clock is damaged, or the grid lost the lane it was on -- "
+              f"and a lane lost off an END is not replaced with silence the way "
+              f"a hole in the middle is, so the read would be a second short "
+              f"and everything after it a second early. Cut the sheet with "
+              f"cut_lanes.py and look at the other end")
     song = retime(song, sr, js[0], js[1] if len(js) > 1 else None)
     # Cut a clock off each end that carried one, which is not always the head:
     # a sheet whose left clock is damaged, or whose grid overran on the left,
@@ -1561,8 +1587,14 @@ def selftest():
     # that overran on the left. The end that carried it is the end to cut.
     lame = got.copy()
     lame[:out_rate] = got[out_rate:2 * out_rate]   # head clock scribbled over
-    cut, n_l, js_l, _, _ = pilot_retime(lame, out_rate, n)
+    said = _io.StringIO()
+    with contextlib.redirect_stdout(said):
+        cut, n_l, js_l, _, _ = pilot_retime(lame, out_rate, n)
     assert len(js_l) == 1 and n_l == n - 1, f"{len(js_l)} clocks, {n_l} lanes"
+    # Said out loud, because the end it happened at is the end that may have
+    # lost a lane, and a lane lost off an end is not put back.
+    assert "only the right-hand clock" in said.getvalue(), (
+        f"one clock went unremarked: {said.getvalue().strip()!r}")
     assert len(cut) == len(lame) - out_rate, "one clock cut two lanes"
     assert pilot_bin(cut[-out_rate:]) is None, "the head was cut and the clock kept"
     # The trace of a real lane is a position, and its slow wander towers over
@@ -1621,7 +1653,8 @@ def selftest():
     assert (rows4, len(js4)) == (1, 1), f"one clock thinned on its own word"
     assert "--rows 2" in said.getvalue(), (
         f"a lone clock was overruled in silence: {said.getvalue().strip()!r}")
-    forced = pilot_retime(lame2, slow_rate, n2, rows=2)[0]
+    with contextlib.redirect_stdout(_io.StringIO()):     # the same lone clock
+        forced = pilot_retime(lame2, slow_rate, n2, rows=2)[0]
     assert len(forced) == len(kept) // 2, (
         f"--rows 2 gave {len(forced)} samples against {len(kept) // 2}")
     # And with no clocks at all -- the sheet that cannot say anything -- the
@@ -1846,6 +1879,19 @@ def selftest():
     edged[:, -30:] = sheet_ink.max()
     assert len(find_tracks(edged)) == nlanes, (
         f"a solid edge added {len(find_tracks(edged)) - nlanes} lanes")
+
+    # One pixel darker than the print used to decide the ink level for the
+    # whole page, because every threshold here came off max(). On a faint
+    # sheet -- and a faint sheet is the one that needs the reader -- a single
+    # 255 speck put the threshold above the stroke: ink_rows() answered None
+    # for a lane that was plainly there, and ink_lean() stopped reading the
+    # skew at all. See ink_level(); the fix is worth 6.6 dB on scan_rows1.
+    faint = (sheet_ink.astype(np.float64) * (100.0 / max(sheet_ink.max(), 1))
+             ).astype(np.uint8)
+    speck = faint.copy()
+    speck[len(speck) // 2, 0] = 255
+    assert ink_rows(faint[:, :60]) == ink_rows(speck[:, :60]),         "one speck moved a lane's ink rows"
+    assert ink_lean(faint) and ink_lean(speck), "one speck hid the page's lean"
 
     # Impulse rejection: a blot's worth of samples out of the trace and back,
     # flattened, and the signal either side of it left exactly where it was.

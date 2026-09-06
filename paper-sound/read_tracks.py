@@ -44,6 +44,52 @@ VETO = 0.03   # how far the median of thirds may sit from the whole page's own
 CUTS = 1.3    # how much more ink than the cleanest candidate a pitch may put
               # on its cut lines and still be taken, for being the smaller.
               # See harmonic().
+PEAK = 99     # percentile of the ROW maxima taken as the level of the ink, in
+              # place of the darkest pixel anywhere. A defect has to spoil one
+              # line in a hundred before it moves a threshold: 26 rows of the
+              # scanner's own edge on a 6600-row page, or ten rows of speck on
+              # a 1000-row lane, all of which is under it. Swept on the sheets
+              # here, in dB against the read they gave off max():
+              #
+              #                 99.9    99     95
+              #   scan_rows1   +0.94  +6.55  +6.59   (23 bad seconds -> 9)
+              #   sheetC       -0.13  +0.19  +0.23
+              #   sheetD_scan3 +0.02  +0.04  -2.22
+              #   sheetB       -0.01  -0.77  -0.72
+              #   the other 10  0.00   0.00  +0.15 and under
+              #
+              # 99.9 is max() again and does nothing; 95 reaches far enough
+              # into the flank of the stroke to cost sheetD_scan3 its read.
+              # See ink_level().
+
+
+def ink_level(a, floor=0.0, q=PEAK):
+    """Halfway between the paper and the ink, from the rows and not one pixel.
+
+    Taken off max() instead -- which is what every threshold in this file used
+    to do -- the level of the ink is set by ONE pixel, and any pixel darker
+    than the print decides it for the whole page. A speck of dust, a hair, a
+    black fleck at the edge of the glass: one of those at 255 over a stroke
+    printed at 100 puts the threshold above the stroke and the ink vanishes.
+    Measured on a synthetic lane, ink_rows() answered (0, 1000) clean and None
+    with a single 255 pixel added to it, and ink_lean() went from a lean to no
+    reading at all the same way.
+
+    It only bites where the print is faint: a stroke at 240 has no room above
+    it for a defect to hide in, and adding one changes nothing. But a faint
+    print is exactly the scan that needs the reader to hold.
+
+    What replaces the maximum is a percentile of the ROW maxima, not of the
+    pixels. The pixels answer a different question -- most of a lane is paper,
+    so a percentile of them lands on the flank of the stroke and quietly moves
+    every threshold in the file down, which cost sheetD_scan3 2.2 dB and won
+    scan_rows1 7.2, i.e. it was retuning rather than repairing. A row's darkest
+    pixel is the ink, in every row, which is what max() was reaching for and
+    got right on a clean scan; taking the 99th of those keeps that answer and
+    takes away the single pixel's vote, since a defect has to spoil one row in
+    a hundred before it counts.
+    """
+    return floor + 0.5 * (float(np.percentile(a.max(1), q)) - floor)
 
 
 def mend_png(path):
@@ -148,7 +194,7 @@ def ink_lean(ink, bands=8):
     """
     rows = len(ink)
     band = max(rows // bands, 1)
-    strong = ink > (float(ink.max()) + np.median(ink[::16, ::16])) / 2
+    strong = ink > ink_level(ink, float(np.median(ink[::16, ::16])))
     ends = []
     for lo in (0, rows - band):
         col = strong[lo:lo + band].sum(0)
@@ -501,7 +547,7 @@ def ink_rows(win, frac=INK):
     300 rows above the ink is one lit row, and the lane is stretched to reach
     it. A lane's ink is one run the height of the page; a speck is a few rows.
     """
-    strong = (win > win.max() * 0.5).sum(1)
+    strong = (win > ink_level(win)).sum(1)
     lit = strong > strong.max() * frac
     edge = np.diff(np.r_[False, lit, False].astype(np.int8))
     runs = [(a, b) for a, b in zip(np.flatnonzero(edge > 0), np.flatnonzero(edge < 0))

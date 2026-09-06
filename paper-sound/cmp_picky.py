@@ -37,12 +37,16 @@ def per_second(got, sr, ref, reach=40000):
     # the baseline off each second separately quietly removes the per-lane
     # offset too, which is the very thing a wide lane gets wrong, and lifts
     # sheetC from 0.79 to 0.97. That is align.py's question, not score.py's.
-    for k in range((len(ref) - 1) // sr):
+    # Flat seconds are kept as NaN rather than dropped. Dropped, they leave
+    # `common` in main() a different set of seconds for each reader, and a
+    # reader whose failures were silence gets a better median for having
+    # failed -- which is the one thing this file exists not to do.
+    for k in range(len(ref) // sr):
         x, y = a[d + k * sr:d + (k + 1) * sr], b[k * sr:(k + 1) * sr]
         if len(x) < sr:
             break
-        if x.std() > 0:
-            out[k] = float(np.corrcoef(x, y)[0, 1])
+        out[k] = (float(np.corrcoef(x, y)[0, 1])
+                  if x.std() > 0 and y.std() > 0 else float("nan"))
     return d, out
 
 
@@ -66,9 +70,12 @@ def main(sr, ref_path, *pairs):
     print(f"against {ref_path} at {sr} Hz, {len(common)} seconds both cover")
     for lab, d, per in runs:
         v = np.array([per[k] for k in sorted(common)])
-        print(f"  {lab:22s} lead {d:6d} samp  median r {np.median(v):.4f} "
-              f"({db(np.median(v)):5.2f} dB)  mean {v.mean():.4f}  "
-              f"below .5 {int((v < 0.5).sum()):3d}/{len(v)}  "
+        flat = int((~np.isfinite(v)).sum())
+        bad = ~np.isfinite(v) | (v < 0.5)
+        print(f"  {lab:22s} lead {d:6d} samp  median r {np.nanmedian(v):.4f} "
+              f"({db(np.nanmedian(v)):5.2f} dB)  mean {np.nanmean(v):.4f}  "
+              f"below .5 {int(bad.sum()):3d}/{len(v)}"
+              f"{f' ({flat} flat)' if flat else ''}  "
               f"worst {' '.join(f'{x:.2f}' for x in np.sort(v)[:3])}")
 
 

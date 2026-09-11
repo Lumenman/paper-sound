@@ -275,11 +275,21 @@ def cut(path, outdir, pitch=None, bleed=BLEED, turn=None, negative=NEGATIVE,
     if aperture is None:
         aperture = APERTURE_MASK * wide / PITCH
 
-    speed = None            # rows a sample got, when the clocks were asked
+    # The clocks are asked whichever way up the sheet is being cut. They carry
+    # two different answers and only one of them is about orientation: WHICH
+    # end reads as PILOT says which way up the sheet lay, and the period in
+    # ROWS says how many rows went into a sample. Turning a sheet swaps the
+    # ends and reverses each lane, and a tone's period in rows survives both,
+    # so the second answer is the same read either way up -- which is why
+    # --upside-down may settle the first without touching the second. It used
+    # to skip this block whole: a forced turn cut a two-row sheet into strips
+    # of 601 rows and called each one a second, where the same sheet turned by
+    # its own clocks came out 600 and said half a second. The flag is for a
+    # sheet whose clocks cannot say which way up it lay; it is not a statement
+    # that the sheet has no clocks.
+    ends, rows_said = clocks(ink, lanes) if PILOT else ([None] * 2, [None] * 2)
+    speed = rows_said[0] if rows_said[0] == rows_said[1] else None
     if turn is None:
-        ends, rows_said = clocks(ink, lanes) if PILOT else ([None] * 2, [None] * 2)
-        if rows_said[0] == rows_said[1]:
-            speed = rows_said[0]
         # The rule itself is paper_sound's, called rather than copied: this
         # reader turns the IMAGE where that one turns the AUDIO, and the two
         # must not be free to drift apart about WHETHER a sheet was turned.
@@ -308,18 +318,18 @@ def cut(path, outdir, pitch=None, bleed=BLEED, turn=None, negative=NEGATIVE,
             print(f"{path}: no clock lanes found -- printed without them, or "
                   f"the lane grid is miscounted. Cutting untimed, and this "
                   f"sheet cannot say which way up it lay")
-        if 2 in rows_said:
-            # The strips are pictures of ROWS, and this sheet put two rows in
-            # every sample, so a strip is half a second and not a second. Said
-            # rather than fixed: thinning the picture would break the one thing
-            # a strip promises, that a row of it is a row of the paper. Read a
-            # sheet like this with paper_sound, which divides by what the same
-            # clocks say; a reader that takes a strip for a second plays it at
-            # half speed and has nothing to warn it.
-            print(f"{path}: the clocks say two rows to the sample -- a strip "
-                  f"here is HALF a second, and its rows are the paper's rows. "
-                  f"paper_sound reads this sheet at the right speed; anything "
-                  f"that takes a strip for a second will not")
+    if 2 in rows_said:
+        # The strips are pictures of ROWS, and this sheet put two rows in
+        # every sample, so a strip is half a second and not a second. Said
+        # rather than fixed: thinning the picture would break the one thing
+        # a strip promises, that a row of it is a row of the paper. Read a
+        # sheet like this with paper_sound, which divides by what the same
+        # clocks say; a reader that takes a strip for a second plays it at
+        # half speed and has nothing to warn it.
+        print(f"{path}: the clocks say two rows to the sample -- a strip "
+              f"here is HALF a second, and its rows are the paper's rows. "
+              f"paper_sound reads this sheet at the right speed; anything "
+              f"that takes a strip for a second will not")
     if turn:
         # Segmented again rather than mirrored, and it is worth the second
         # pass: the grid is not symmetric about the middle of the page, so
@@ -654,6 +664,28 @@ def selftest():
             f"a --rows 2 sheet did not name the row rate a strip reader needs: "
             f"{said.getvalue().strip()!r}")
 
+        # The same sheet with the turn FORCED. --upside-down answers one of the
+        # two questions the clocks answer, and used to take the other with it:
+        # the clocks were not asked at all, so the sheet's speed went unread,
+        # the strips came out 401 rows instead of 400 and every one of them was
+        # called a whole second. Which way up a sheet lay and how many rows
+        # went into a sample are not the same question.
+        out3 = os.path.join(tmp, "two_forced")
+        os.makedirs(out3, exist_ok=True)
+        forced = _io.StringIO()
+        with contextlib.redirect_stdout(forced):
+            cut(os.path.join(tmp, "two.png"), out3, turn=True)
+        for line in ("two rows to the sample",
+                     f"the audio on it is {odd - 1} Hz",
+                     f"play it at {(odd - 1) * 2} Hz"):
+            assert line in forced.getvalue(), (
+                f"a forced turn lost the sheet's speed: no {line!r} in "
+                f"{forced.getvalue().strip()!r}")
+        with Image.open(os.path.join(out3, f"{2:0{PAD}d}.{FORMAT}")) as im:
+            assert im.size[1] % 2 == 0, (
+                f"a forced turn cut a two-row sheet into strips of "
+                f"{im.size[1]} rows, which is half a sample short")
+
         # The claim this file makes about its two containers, actually made.
         # It was printed for a long time on the strength of nobody having
         # written a png here at all.
@@ -921,7 +953,8 @@ def selftest():
           f"strips after it where they were; a sheet that cannot be cut "
           f"leaves the earlier strips "
           f"where they were and a good one clears them, four digits and all; "
-          f"a --rows 2 sheet names both its rates; "
+          f"a --rows 2 sheet names both its rates, turn forced or "
+          f"measured; "
           f"pages of {n}, 30 and 120 lanes at 0.7 and 0.9 of full swing "
           f"still cut into as many")
 

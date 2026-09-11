@@ -887,22 +887,33 @@ def do_print(args):
     if per_sheet < 1 or not len(signal):
         raise SystemExit("nothing to print")
 
-    if sr != rate * rows:
+    if sr != rate:
         # The kernel is as long as the ratio needs (lowpass), so this is no
         # longer the box that cost a couple of dB: 44.1 kHz down to 6780 comes
         # out flat to 0.2 dB against a 513-tap resample, and 0.8 dB down at the
         # very top. Said anyway, because nothing in prep*.bat meets it -- they
         # hand over `rate -v 6780` already -- and a resample the reader cannot
         # see is worth one line on the way past.
-        print(f"  NOTE: {args.audio} is {sr} Hz and this sheet holds "
-              f"{rate * rows}; resampled here through a "
-              f"{2 * int(np.ceil(DEC_TAPS * sr / (rate * rows))) + 1}-tap sinc. "
-              f"`sox in.wav -r {rate * rows} out.wav rate -v {rate * rows}` "
+        #
+        # The sheet's AUDIO rate is `rate`, whatever --rows says: a lane is
+        # `rate` rows either way, and at two rows a sample it holds half a
+        # second of `rate` Hz rather than a whole second of twice it -- which
+        # is what do_read says back about the same sheet, and what cut_lanes
+        # names against the ROW rate a strip reader needs. This line used to
+        # name `rate * rows` throughout: the wrong Hz, a tap count for a
+        # resample that never ran, and a sox command that handed the next run
+        # a file to resample again. What is resampled here is audio, so what
+        # is named here is the audio rate.
+        taps = (f" through a {2 * int(np.ceil(DEC_TAPS * sr / rate)) + 1}-tap "
+                f"sinc" if rate < sr else "")
+        print(f"  NOTE: {args.audio} is {sr} Hz and this sheet holds {rate}; "
+              f"resampled here{taps}. "
+              f"`sox in.wav -r {rate} out.wav rate -v {rate}` "
               f"is the same job done by a resampler")
     lanes_wanted = int(np.ceil(len(signal) / rate))
     sheets = int(np.ceil(lanes_wanted / per_sheet))
     base = (args.out or args.audio.rsplit(".", 1)[0]).removesuffix(".png")
-    print(f"{args.audio}: {lanes_wanted / rows:g} s at {rate * rows} Hz, "
+    print(f"{args.audio}: {lanes_wanted / rows:g} s at {rate} Hz, "
           f"{per_sheet / rows:g} per sheet "
           f"-> {sheets} sheet{'s' if sheets != 1 else ''}")
     print(f"  {args.paper} {paper_w:g}x{paper_h:g} mm = {sheet_w}x{sheet_h} px "
@@ -1663,10 +1674,40 @@ def selftest():
         args = argparse.Namespace(audio=wav, out=png, paper="38.1x38.1", dpi=600,
                                   margin_mm=6.35, pitch=PITCH, start=0.0,
                                   pilot=True, rows=2)
-        with contextlib.redirect_stdout(_io.StringIO()):
+        said = _io.StringIO()
+        with contextlib.redirect_stdout(said):
             do_print(args)
         slow, slow_rate, n2 = read_curves_page(load_ink(png))
         down = read_curves_page(load_ink(png)[::-1, ::-1])
+
+        # What this sheet SAYS about its rate, which at two rows a sample is
+        # the one number print and read can disagree about while every sample
+        # on the paper is right. The audio rate is the sheet's `rate` either
+        # way -- a lane is `rate` rows and holds half a second of it -- and
+        # `rate * rows` is the ROW rate, for a reader that takes a row for a
+        # sample. Naming the row rate here said this wav had been resampled
+        # when it had not, priced a sinc that never ran, and handed out a sox
+        # line at twice the rate, which would have made the next run resample
+        # for real. This wav is already at the sheet's rate.
+        assert "resampled here" not in said.getvalue(), (
+            f"a wav already at the sheet's rate was called resampled: "
+            f"{said.getvalue().strip()!r}")
+        assert f"s at {rate} Hz" in said.getvalue(), (
+            f"a two-row sheet named something other than its audio rate: "
+            f"{said.getvalue().strip()!r}")
+        # And one that is NOT at it, which is where the note belongs.
+        off = 3 * rate // 2
+        write_wav(wav, to_rate(sig[:4 * rate], rate, off), off)
+        args.out = os.path.join(tmp, "slow2.png")
+        said = _io.StringIO()
+        with contextlib.redirect_stdout(said):
+            do_print(args)
+        for line in (f"is {off} Hz and this sheet holds {rate};",
+                     f"-r {rate} out.wav rate -v {rate}`",
+                     f"{2 * int(np.ceil(DEC_TAPS * off / rate)) + 1}-tap sinc"):
+            assert line in said.getvalue(), (
+                f"the resample note does not say {line!r}: "
+                f"{said.getvalue().strip()!r}")
     assert n2 == 10, f"4 s at two rows a sample cut into {n2} lanes, want 10"
     got2, n2, js2, _, got_rows = pilot_retime(slow, slow_rate, n2)
     assert got_rows == 2, f"a two-row sheet read back as {got_rows} rows a sample"

@@ -17,6 +17,12 @@ sheet that is the head clock, so 002 is the first second. Inside a strip time
 runs down, a row to a sample, the way it does on the sheet. Nothing is cut
 horizontally.
 
+The numbers are the GRID's, not a count of the files: a lane the segmentation
+never found held a second all the same, so its number is left unwritten and
+said rather than given to the next lane, which would put every strip past it a
+second early. A gap in the numbering is that second; paper_sound reads silence
+in the same place.
+
 The defaults are set for a reader that CANNOT aim -- one that takes a
 lane-wide centroid of the pixel value as it finds it, which is what picky.py
 does and what most things will do. A strip is therefore not a plain crop: it
@@ -245,8 +251,13 @@ def traces(ink, lanes, narrow):
 
 
 def cut(path, outdir, pitch=None, bleed=BLEED, turn=None, negative=NEGATIVE,
-        aperture=None, fmt=FORMAT, first=1):
-    """Write one TIFF per lane of `path`; returns how many.
+        aperture=None, fmt=FORMAT, first=1, wrote=None):
+    """Write one TIFF per lane of `path`; returns how many SECONDS it held.
+
+    Seconds rather than files, because a lane the segmentation never found is
+    a second of the sheet with no strip to write for it -- see the numbering
+    below. `wrote`, if given a list, is handed the name of every file this
+    actually wrote, which is the only other way to tell the two apart.
 
     `turn` forces the 180 degree turn on or off; None measures it off the
     clocks. `aperture` masks each strip down to that many px around its own
@@ -259,8 +270,10 @@ def cut(path, outdir, pitch=None, bleed=BLEED, turn=None, negative=NEGATIVE,
     lanes = find_tracks(ink, pitch)
     if not lanes:
         raise SystemExit(f"{path}: no lanes found")
+    wide = np.median([b - a for a, b in lanes])
+    span = int(wide)            # the grid's own pitch, as read_curves_page takes it
     if aperture is None:
-        aperture = APERTURE_MASK * np.median([b - a for a, b in lanes]) / PITCH
+        aperture = APERTURE_MASK * wide / PITCH
 
     speed = None            # rows a sample got, when the clocks were asked
     if turn is None:
@@ -351,8 +364,24 @@ def cut(path, outdir, pitch=None, bleed=BLEED, turn=None, negative=NEGATIVE,
             # samples of offset. The strips are stretched to a common height
             # anyway, so this costs one row of picture and nothing else.
             rate -= rate % speed
-    for k, (x0, x1) in enumerate(lanes, first):
-        t = tr[k - first] if tr is not None else None
+    # Numbered by the GRID, not by the lanes found on it. A lane the
+    # segmentation never found still held a second of the sheet, and numbering
+    # the next lane after it takes that second out of the middle of the
+    # recording: every strip past the hole is one place early, in order,
+    # correctly named, and indistinguishable from a sheet that never had a
+    # hole. read_curves_page settles it the same way and by the same
+    # arithmetic -- the grid is regular, so the gap measures itself -- except
+    # that a wav has to be continuous and puts silence in, while a folder of
+    # strips can leave the number unwritten and say so. Nothing here invents a
+    # strip: a blank one is not silence to a reader that takes the centroid of
+    # what it is given, it is the stroke slammed to the edge of the frame.
+    k, holes = first, []
+    for i, (x0, x1) in enumerate(lanes):
+        if i:
+            gap = int(round((x0 - lanes[i - 1][0]) / span)) - 1
+            holes.extend(range(k, k + gap))
+            k += gap
+        t = tr[i] if tr is not None else None
         if t is None:
             lo, hi = max(0, x0 - b), min(ink.shape[1], x1 + b)
         else:
@@ -392,9 +421,21 @@ def cut(path, outdir, pitch=None, bleed=BLEED, turn=None, negative=NEGATIVE,
                                     rate)).astype(np.uint8)
         # Back to paper-white: load_ink inverted the page to measure it, and
         # a strip should look like the sheet it came off unless asked not to.
+        name = f"{k:0{PAD}d}.{fmt}"
         Image.fromarray(crop if negative else 255 - crop).save(
-            os.path.join(outdir, f"{k:0{PAD}d}.{fmt}"), dpi=dpi,
+            os.path.join(outdir, name), dpi=dpi,
             **({"compression": COMPRESS} if fmt == "tif" else {}))
+        if wrote is not None:
+            wrote.append(name)
+        k += 1
+    if holes:
+        shown = ", ".join(f"{h:0{PAD}d}" for h in holes[:8])
+        print(f"{path}: no lane on the sheet to cut at "
+              f"{shown}{' ...' if len(holes) > 8 else ''} -- "
+              f"{len(holes)} number{'s' if len(holes) != 1 else ''} of "
+              f"{k - first} left unwritten, so the strips after keep "
+              f"their place. paper_sound reads silence there; a folder played "
+              f"in order is that second short")
     # Said here rather than by the caller, because this is where the sheet's
     # own speed was read. A strip is a picture of ROWS, and how many seconds
     # those rows are is the one thing about it that is not on its face.
@@ -412,7 +453,7 @@ def cut(path, outdir, pitch=None, bleed=BLEED, turn=None, negative=NEGATIVE,
                   f" one row for one sample has to play it at {rate * speed} Hz")
         else:
             print(f"  one lane is one second: {rate} rows, so {rate} Hz")
-    return len(lanes)
+    return k - first
 
 
 def main(argv=None):
@@ -464,12 +505,12 @@ def main(argv=None):
 
     outdir = args.out or args.scans[0].rsplit(".", 1)[0] + SUFFIX
     os.makedirs(outdir, exist_ok=True)
-    n = 1
+    n, wrote = 1, []
     for path in args.scans:
         try:
             cut_n = cut(path, outdir, args.pitch, args.bleed,
                         True if args.upside_down else None, args.negative,
-                        args.aperture, args.format, n)
+                        args.aperture, args.format, n, wrote)
         except ValueError as e:
             # What read_curves_page does with the same sheet: a page with no
             # ink on it, or none that can be centred, is a thing to say rather
@@ -497,7 +538,11 @@ def main(argv=None):
     # `len(f) == PAD + 4` either: PAD is the least a name is padded to and not
     # the most it can be, so a run of a thousand strips wrote 1000.png where
     # the sweep looked only at three digits and left it beside the new cut.
-    mine = {f"{k:0{PAD}d}.{args.format}" for k in range(1, n)}
+    # What was WRITTEN, not the range of numbers cut: a sheet with a hole in
+    # its grid leaves that number unwritten, and a range would hand an earlier
+    # cut's strip that number to keep -- sitting in the folder, in order, in
+    # the one place this cut is saying there is nothing.
+    mine = set(wrote)
     stale = [f for f in os.listdir(outdir)
              if f not in mine and f.endswith((".tif", ".png"))
              and f.rsplit(".", 1)[0].isdigit()]
@@ -506,7 +551,8 @@ def main(argv=None):
     if stale:
         print(f"{outdir}/: {len(stale)} strip{'s' if len(stale) != 1 else ''} "
               f"from an earlier cut removed")
-    print(f"wrote {n - 1} strips to {outdir}/")
+    print(f"wrote {len(wrote)} strips to {outdir}/"
+          + (f", numbered to {n - 1}" if len(wrote) != n - 1 else ""))
 
 
 def selftest():
@@ -765,6 +811,40 @@ def selftest():
                                            for k in range(1, one + two + 1)], \
             "a second sheet did not number on from the first"
 
+        # A lane wiped off the sheet -- the one fault a folder of strips cannot
+        # report by being complete, because it is complete. paper_sound wipes
+        # the same lane and puts silence at that second; here the NUMBER is
+        # left unwritten instead, and what must not happen is that the lane
+        # after the hole takes the missing lane's number: every strip past it
+        # then plays a second early, in order, correctly named, and
+        # indistinguishable from a sheet that never had a hole.
+        holed = trim_paper(255 - page)
+        x0, x1 = find_tracks(holed)[5]       # lane 5 of the page is second 4
+        holed[:, x0:x1] = 0
+        hole_png = os.path.join(tmp, "holed.png")
+        Image.fromarray(255 - holed).save(hole_png, dpi=(DPI, DPI))
+        out = os.path.join(tmp, "holed_lanes")
+        os.makedirs(out, exist_ok=True)
+        names, said = [], _io.StringIO()
+        with contextlib.redirect_stdout(said):
+            got = cut(hole_png, out, wrote=names)
+        assert got == n + 2, f"a wiped lane left {got} seconds of {n + 2}"
+        assert len(names) == n + 1, (
+            f"{len(names)} strips written for {n + 1} lanes on the sheet")
+        assert "no lane on the sheet to cut at" in said.getvalue(), (
+            f"the hole was cut around without a word: {said.getvalue().strip()!r}")
+        assert f"{6:0{PAD}d}.{FORMAT}" not in names, "the hole was given a strip"
+        # The strip after the hole has to be its own second. Were the hole
+        # numbered over instead of left, this is where the NEXT second would
+        # have landed, so the two correlations tell the two outcomes apart.
+        with Image.open(os.path.join(out, f"{7:0{PAD}d}.{FORMAT}")) as im:
+            past = wave(np.asarray(im))
+        kept = np.corrcoef(past, sig[5 * sr:6 * sr])[0, 1]
+        slid = np.corrcoef(past, sig[6 * sr:7 * sr])[0, 1]
+        assert kept > 0.999 > slid, (
+            f"past the hole the strips sit at {kept:+.4f} against their own "
+            f"second and {slid:+.4f} against the one after -- the tail slid")
+
         # main()'s own sweep of the folder, which nothing above reaches: cut()
         # writes the strips, main decides what of an earlier cut survives them.
         # Two ways it used to not survive. A sheet that cannot be cut at all --
@@ -837,7 +917,9 @@ def selftest():
           f"sheets 17.6 and 48 px crooked cut to r > 0.999 as well, the "
           f"steep one with no blank row in any strip; a loud one cuts "
           f"to strips and a full-swing one still says why it cannot; two sheets "
-          f"number on; a sheet that cannot be cut leaves the earlier strips "
+          f"number on; a wiped lane leaves its number unwritten and the "
+          f"strips after it where they were; a sheet that cannot be cut "
+          f"leaves the earlier strips "
           f"where they were and a good one clears them, four digits and all; "
           f"a --rows 2 sheet names both its rates; "
           f"pages of {n}, 30 and 120 lanes at 0.7 and 0.9 of full swing "

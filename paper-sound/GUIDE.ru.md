@@ -276,6 +276,7 @@ python paper-sound/paper_sound.py read sheet_01.png sheet_02.png -o back.wav
 | `lane 3 of 40 is 8 px against a median of 38` | что-то на листе сегментировано как полоса | **важно**: всё после неё сдвинуто на секунду |
 | `the drift fitted down this page says ... the ink's own edges say ...` | подгонка сноса ушла с листа, перекос прочитан низко | пересканировать ровнее |
 | `seconds 12, 13 of 120: no lane on the sheet to read there` | дырки в сетке | на их месте тишина, хвост не съезжает |
+| `no lane on the sheet to cut at 006` | то же при нарезке полос | номер остаётся незаписанным, полосы после него не съезжают; в папке будет дырка в нумерации |
 | `stretched to the first sheet's 6606 Hz` | второй лист снят в другом масштабе | ничего, приведён к первому |
 | `pHYs carries a CRC its writer computed wrong; mended in memory` | сканер соврал в контрольной сумме служебного блока | ничего, файл на диске не тронут |
 

@@ -464,18 +464,6 @@ def main(argv=None):
 
     outdir = args.out or args.scans[0].rsplit(".", 1)[0] + SUFFIX
     os.makedirs(outdir, exist_ok=True)
-    # The strips are numbered from one every time, so a shorter sheet cut into
-    # the folder a longer one left behind keeps the tail of the old cut -- in
-    # order, correctly named, indistinguishable, and anything concatenating the
-    # folder plays those seconds as part of this sheet. Only what this tool
-    # writes is cleared: NNN.tif and NNN.png, nothing else in the folder.
-    stale = [f for f in os.listdir(outdir)
-             if len(f) == PAD + 4 and f[:PAD].isdigit() and f[PAD:] in (".tif", ".png")]
-    for f in stale:
-        os.remove(os.path.join(outdir, f))
-    if stale:
-        print(f"{outdir}/: {len(stale)} strip{'s' if len(stale) != 1 else ''} "
-              f"from an earlier cut removed")
     n = 1
     for path in args.scans:
         try:
@@ -486,11 +474,38 @@ def main(argv=None):
             # What read_curves_page does with the same sheet: a page with no
             # ink on it, or none that can be centred, is a thing to say rather
             # than a traceback. paper_sound.main wraps its own read this way.
-            raise SystemExit(f"{path}: {e}")
+            raise SystemExit(f"{path}: {e}" + (
+                f"\n{outdir}/: what was cut before this sheet has been written "
+                f"over whatever was in the folder, and the folder has NOT been "
+                f"cleared -- it holds part of this cut and the rest of the "
+                f"earlier one" if n > 1 else ""))
         print(f"{path}: {cut_n} lanes -> {outdir}/"
               f"{n:0{PAD}d}.{args.format} .. "
               f"{n + cut_n - 1:0{PAD}d}.{args.format}")
         n += cut_n
+    # The strips are numbered from one every time, so a shorter sheet cut into
+    # the folder a longer one left behind keeps the tail of the old cut -- in
+    # order, correctly named, indistinguishable, and anything concatenating the
+    # folder plays those seconds as part of this sheet. Only what this tool
+    # writes is cleared: NNN.tif and NNN.png, nothing else in the folder.
+    #
+    # AFTER the cut, and by what this run actually wrote. Cleared first, a
+    # sheet that turns out to be blank -- or a disk that fills on the third of
+    # five -- took the previous cut with it and left nothing in its place; the
+    # check that the inputs exist does not reach that, because what fails is
+    # the reading and the writing rather than the opening. The number is not
+    # `len(f) == PAD + 4` either: PAD is the least a name is padded to and not
+    # the most it can be, so a run of a thousand strips wrote 1000.png where
+    # the sweep looked only at three digits and left it beside the new cut.
+    mine = {f"{k:0{PAD}d}.{args.format}" for k in range(1, n)}
+    stale = [f for f in os.listdir(outdir)
+             if f not in mine and f.endswith((".tif", ".png"))
+             and f.rsplit(".", 1)[0].isdigit()]
+    for f in stale:
+        os.remove(os.path.join(outdir, f))
+    if stale:
+        print(f"{outdir}/: {len(stale)} strip{'s' if len(stale) != 1 else ''} "
+              f"from an earlier cut removed")
     print(f"wrote {n - 1} strips to {outdir}/")
 
 
@@ -749,6 +764,50 @@ def selftest():
         assert sorted(os.listdir(run)) == [f"{k:0{PAD}d}.{FORMAT}"
                                            for k in range(1, one + two + 1)], \
             "a second sheet did not number on from the first"
+
+        # main()'s own sweep of the folder, which nothing above reaches: cut()
+        # writes the strips, main decides what of an earlier cut survives them.
+        # Two ways it used to not survive. A sheet that cannot be cut at all --
+        # blank, or unreadable -- passed the check that its file exists, and
+        # the folder was swept before anything was read, so the earlier cut was
+        # gone and nothing took its place. And the sweep matched three digits
+        # exactly, while the writer pads to three and takes as many as the
+        # number needs, so a thousandth strip outlived the cut that wrote it.
+        keep = os.path.join(tmp, "keep")
+        os.makedirs(keep, exist_ok=True)
+        blank = os.path.join(tmp, "blank.png")
+        Image.fromarray(np.full((200, 200), 255, np.uint8)).save(blank, dpi=(DPI, DPI))
+        earlier = [f"{1:0{PAD}d}.tif", "1000.png"]
+        for name in earlier:
+            Image.fromarray(np.zeros((4, 4), np.uint8)).save(os.path.join(keep, name))
+        try:
+            with contextlib.redirect_stdout(_io.StringIO()):
+                main([blank, "-o", keep])
+        except SystemExit as e:
+            assert "no ink" in str(e), f"a blank sheet stopped the cut with {e}"
+        else:
+            assert False, "a blank sheet cut into strips"
+        assert sorted(os.listdir(keep)) == sorted(earlier), (
+            f"a sheet that could not be cut took the earlier cut with it: "
+            f"{sorted(os.listdir(keep))}")
+        with contextlib.redirect_stdout(_io.StringIO()):
+            main([os.path.join(tmp, "up.png"), "-o", keep, "--format", "png"])
+        assert sorted(os.listdir(keep)) == [f"{k:0{PAD}d}.png"
+                                            for k in range(1, n + 3)], (
+            f"an earlier cut outlived a good one: {sorted(os.listdir(keep))}")
+        # The one hole left by sweeping at the end: a sheet that fails after an
+        # earlier one was written leaves the folder a mixture of this cut and
+        # the last, because nothing is swept and the strips already written
+        # went over whatever they were named after. Not fixable without cutting
+        # somewhere else first; it is said instead of found by playing it.
+        try:
+            with contextlib.redirect_stdout(_io.StringIO()):
+                main([os.path.join(tmp, "up.png"), blank, "-o", keep])
+        except SystemExit as e:
+            assert "holds part of this cut" in str(e), (
+                f"a cut that failed on its second sheet said only: {e}")
+        else:
+            assert False, "a blank second sheet cut into strips"
     # The one thing a quiet sheet cannot test. find_pitch measures the page as
     # a grating, and every lane holds a different second, so a loud page is a
     # grating whose bars move: past about half the lane's swing in rms the
@@ -778,7 +837,9 @@ def selftest():
           f"sheets 17.6 and 48 px crooked cut to r > 0.999 as well, the "
           f"steep one with no blank row in any strip; a loud one cuts "
           f"to strips and a full-swing one still says why it cannot; two sheets "
-          f"number on; a --rows 2 sheet names both its rates; "
+          f"number on; a sheet that cannot be cut leaves the earlier strips "
+          f"where they were and a good one clears them, four digits and all; "
+          f"a --rows 2 sheet names both its rates; "
           f"pages of {n}, 30 and 120 lanes at 0.7 and 0.9 of full swing "
           f"still cut into as many")
 

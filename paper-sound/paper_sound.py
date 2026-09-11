@@ -742,10 +742,19 @@ def lowpass(x, ratio, cycles=DEC_TAPS):
     the box it replaced, which dropped 1.8. Scaled, the same kernel is flat to
     0.2 dB there, and the whole of a 5.3 million sample file costs 0.32 s
     against 0.16.
+
+    The output is as long as the INPUT, which "same" does not promise: numpy
+    returns max(len(x), len(h)) under that name, so a clip shorter than the
+    kernel came back longer than it went in -- 20 samples filtered at half
+    Nyquist came back as 65 -- and to_rate below, which reads the length after
+    filtering to lay out the new grid, then stretched a clip of 20 samples
+    across 65 samples of time. The whole convolution is taken instead and the
+    input's own length cut out of the middle of it, which is what "same" does
+    anyway wherever the signal is the longer of the two.
     """
     t = int(np.ceil(cycles / ratio))
     h = np.sinc(np.arange(-t, t + 1) * ratio) * np.hanning(2 * t + 1)
-    return np.convolve(x, h / h.sum(), "same")
+    return np.convolve(x, h / h.sum(), "full")[t:t + len(x)]
 
 
 def to_rate(signal, sr, rate):
@@ -1470,6 +1479,21 @@ def selftest():
     high = to_rate(np.sin(2 * np.pi * 2000 * t), 4800, 600)
     assert np.abs(high).max() < 0.3, (
         f"2 kHz folded into a 600 Hz sheet at {np.abs(high).max():.2f}")
+
+    # And a clip SHORTER than the kernel that filters it, which is the one
+    # length numpy's "same" does not mean: it returns max(len(x), len(h)), so
+    # 20 samples came back as 65 and to_rate laid its new grid across all 65 --
+    # a clip of half a second resampled into a second and a half of nothing.
+    # Not reachable from a whole file, reachable from anything that resamples a
+    # fragment, and silent either way: the count of samples that comes out is
+    # right, it is the TIME they are spread over that is not.
+    imp = np.zeros(20)
+    imp[2] = 1.0
+    assert len(lowpass(imp, 0.5)) == len(imp), (
+        f"lowpass gave {len(lowpass(imp, 0.5))} samples for {len(imp)}")
+    assert np.argmax(lowpass(imp, 0.5)) == 2, "the filter moved the impulse"
+    at = int(np.argmax(to_rate(imp, 40, 20)))
+    assert at == 1, f"a 20 sample clip halved put its impulse at {at}, want 1"
 
     with tempfile.TemporaryDirectory() as tmp:
         wav, png = os.path.join(tmp, "in.wav"), os.path.join(tmp, "sheet.png")

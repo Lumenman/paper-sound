@@ -1825,6 +1825,24 @@ def selftest():
                       - load_ink(bad).astype(int)).max() <= 1, (
             "a 16-bit scan did not read back as the 8-bit page it is")
 
+        # And the other depth a scanner offers: a BITONAL page, PIL's mode
+        # "1". It arrives as `bool`, which used to miss the 8-bit path and be
+        # scaled as though True were 1 of 255 -- paper 254, ink 255, a page of
+        # solid ink one value apart. The read off such a page is coarse
+        # whatever happens, the anti-aliased edge having been thrown away
+        # before this program saw it; what it may not be is a page of ink.
+        line_art = os.path.join(tmp, "bitonal.png")
+        _Image.fromarray(page8).convert("1", dither=_Image.NONE).save(line_art)
+        ink1 = load_ink(line_art)
+        assert set(np.unique(ink1)) <= {0, 255}, (
+            f"a bitonal page read back as {np.unique(ink1)[:5]}")
+        assert (ink1 == 0).any() and (ink1 == 255).any(), (
+            "a bitonal page read back as one flat value")
+        r1 = np.corrcoef(ink1.ravel() > 127,
+                         load_ink(bad).ravel() > 127)[0, 1]
+        assert r1 > 0.8, (
+            f"a bitonal page reads at {r1:+.3f} against the same page in grey")
+
         end = chunk_at(b"pHYs")
         raw[end:end + 4] = bytes(4)          # the CRC, wrong on purpose
         open(bad, "wb").write(bytes(raw))

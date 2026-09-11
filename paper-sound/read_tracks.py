@@ -143,9 +143,20 @@ def ink_of(im):
     position in the anti-aliased edge, which 8 bits already resolves to about
     1/256 of a pixel; if a 16-bit sheet ever measures better, this is the line
     to change.
+
+    A BITONAL page -- PIL's mode "1", what a scanner set to line art writes --
+    comes out of np.asarray as `bool`, which is neither of the branches below
+    and lands in the 16-bit one. There it is scaled as if True were 1 of 255,
+    so the paper reads 254 and the ink 255: a page of solid ink one value
+    apart, on which every threshold here finds whatever it likes. It goes
+    through convert("L") with the 8-bit scans instead, which maps it to the
+    0 and 255 it means. The README asks for a grey scan and means it -- a
+    bitonal page has thrown away the anti-aliased edge this format reads, and
+    what is left is a coarse read rather than a good one -- but a coarse read
+    is the honest outcome, and a page of ink is not.
     """
     a = np.asarray(im)
-    if a.dtype == np.uint8:
+    if a.dtype == np.uint8 or a.dtype == np.bool_:
         return 255 - np.asarray(im.convert("L"))
     a = a.astype(np.float64)
     return (255 - np.round(a * (255.0 / (65535.0 if a.max() > 255 else 255.0)))

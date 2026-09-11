@@ -123,18 +123,22 @@ BLEED = STROKE / 2      # px kept on either side of the cut. find_tracks picks
                         # stroke. Half a stroke is small enough that a
                         # neighbour at rest (MARGIN px clear of the boundary by
                         # construction) does not appear in the strip.
-                        # ponytail: a rectangle cannot follow a crooked
-                        # lane -- but measured, the bleed is not what decides
-                        # that. Strips off a sheet lying 17.6 px out over its
-                        # height (the crooked sheet in paper_sound.py) read
-                        # back at r 1.00000 against the audio that was printed,
-                        # and widening the crop to the traced stroke changes
-                        # them in no figure. What gives way first is the
-                        # SEGMENTATION: past about 30 px of skew a lane wanders
-                        # further than its own pitch, vertical cuts cannot tell
-                        # it from its neighbour, and the strips come back at
-                        # 0.37. Deskew the page before that; no bleed reaches
-                        # it. The other ceiling is the medium's rather than the
+                        # This is the bleed for a crop the trace does not aim:
+                        # an unmasked strip, or one whose lane could not be
+                        # centred. Where there IS a trace the crop is cut to
+                        # the stroke's own excursion instead, because a
+                        # rectangle at the lane's mid-page columns is what
+                        # gives way first on a crooked sheet -- not, as this
+                        # said for a long time, the segmentation. Measured on
+                        # the selftest's own sheet: at 32 px of skew over 400
+                        # rows the strips start coming back with blank rows and
+                        # r falls to 0.51, at 48 px to 0.09, at 120 px to
+                        # 0.006 -- while find_tracks counted all 22 lanes
+                        # correctly at every one of those. Cut to the trace,
+                        # the same sheets read 1.00000 out to 120 px. 17.6 px
+                        # (the crooked scan in paper_sound.py) was inside the
+                        # old rectangle, which is why this held up.
+                        # The other ceiling is the medium's rather than the
                         # cut's -- at 0.9 of full swing a stroke at a sixth of
                         # the sample rate crosses 28 px in 7 rows, the row is a
                         # smear, and an 8 px window cannot follow: 0.11 to 0.57
@@ -348,10 +352,26 @@ def cut(path, outdir, pitch=None, bleed=BLEED, turn=None, negative=NEGATIVE,
             # anyway, so this costs one row of picture and nothing else.
             rate -= rate % speed
     for k, (x0, x1) in enumerate(lanes, first):
-        lo, hi = max(0, x0 - b), min(ink.shape[1], x1 + b)
+        t = tr[k - first] if tr is not None else None
+        if t is None:
+            lo, hi = max(0, x0 - b), min(ink.shape[1], x1 + b)
+        else:
+            # Cut to where the stroke WENT, not to where the lane sits halfway
+            # down the page. The mask below is drawn in the page's own columns
+            # and cannot hand back a pixel the crop never took, so a lane that
+            # rides the skew out of its own columns loses whole rows -- blank,
+            # unannounced, the count of strips still right. Measured on the
+            # crooked sheet below: at 32 px of skew over 400 rows the strips
+            # start coming back with empty rows, at 48 px every one of them is
+            # missing 14 to 52 of its 400. lane_centroid does the same sum for
+            # the same reason (`reach`), which is why the wav side never saw
+            # this. Half an aperture past the trace is all the mask keeps
+            # anyway, so nothing here is a wider file than it has to be.
+            (r0, r1), col = t
+            lo = max(0, int(np.floor(col.min() - aperture / 2)))
+            hi = min(ink.shape[1], int(np.ceil(col.max() + aperture / 2)) + 1)
         crop = ink[:, lo:hi]
-        if tr is not None and tr[k - first] is not None:
-            (r0, r1), col = tr[k - first]
+        if t is not None:
             x = np.arange(lo, hi)[None, :]
             crop = np.where(np.abs(x - col[:, None]) <= aperture / 2,
                             crop[r0:r1], 0)
@@ -637,6 +657,36 @@ def selftest():
             r = np.corrcoef(v, flat(sig[(k - 2) * sr:(k - 1) * sr]))[0, 1]
             assert r > 0.999, f"crooked strip {k} reads back at r={r:+.4f}"
 
+        # And crooked enough that the lane leaves its own columns, which the
+        # sheet above is not: 17.6 px is the crooked scan this project
+        # measured, and a rectangle cut to the lane still holds it. 48 px is
+        # past where that rectangle stops holding anything, and nothing in the
+        # strip count or in a warning ever said so -- cut to the lane, every
+        # strip here came back with 14 to 52 of its 400 rows blank and read
+        # 0.09 against the second that made it, while find_tracks went on
+        # counting 22 lanes correctly out to 120 px. Blank rows are the direct
+        # evidence and the cheap half of the check; the correlation is what
+        # they cost.
+        steep_edges, _ = lay_out(whole, sr, n + 2, pitch, 48.0 / sr)
+        w = int(np.ceil(max(e.max() for _, e in steep_edges) + pitch))
+        steep = os.path.join(tmp, "steep.png")
+        Image.fromarray(255 - np.round(render_page(steep_edges, pitch, w) * 255)
+                        .astype(np.uint8)).save(steep, dpi=(DPI, DPI))
+        out = os.path.join(tmp, "steep_lanes")
+        os.makedirs(out, exist_ok=True)
+        got = cut(steep, out)
+        assert got == n + 2, f"the steep sheet cut into {got} lanes"
+        for k in range(2, n + 2):
+            with Image.open(os.path.join(out, f"{k:0{PAD}d}.{FORMAT}")) as im:
+                a = np.asarray(im)
+            blank = int((a.sum(1) == 0).sum())
+            assert not blank, (f"strip {k} off a sheet 48 px crooked has "
+                               f"{blank} blank rows of {a.shape[0]}: the cut "
+                               f"went where the lane sits, not where the "
+                               f"stroke went")
+            r = np.corrcoef(flat(wave(a)), flat(sig[(k - 2) * sr:(k - 1) * sr]))[0, 1]
+            assert r > 0.999, f"steep strip {k} reads back at r={r:+.4f}"
+
         # A loud sheet through cut() itself. The lane COUNT at 0.7 and 0.9 is
         # checked further down on find_tracks alone, and the count is the easy
         # half: the mask has to stay on a stroke swinging the width of its own
@@ -725,7 +775,8 @@ def selftest():
     print(f"selftest: {n + 2} lanes cut both ways up, clocks in order, "
           f"lane-wide centroid r > 0.999 on every strip; tif and png identical; "
           f"a broken pHYs CRC mends to the same strips; "
-          f"a sheet 17.6 px crooked cuts to r > 0.999 as well; a loud one cuts "
+          f"sheets 17.6 and 48 px crooked cut to r > 0.999 as well, the "
+          f"steep one with no blank row in any strip; a loud one cuts "
           f"to strips and a full-swing one still says why it cannot; two sheets "
           f"number on; a --rows 2 sheet names both its rates; "
           f"pages of {n}, 30 and 120 lanes at 0.7 and 0.9 of full swing "

@@ -81,10 +81,10 @@ import argparse
 
 import numpy as np
 
-from paper_sound import (BASELINE, DPI, HEADROOM, MARGIN_MM, PAPER_DEFAULT,
-                         PITCH, highpass, lay_out as stroke_lay_out, mm_px,
-                         paper_mm, read_curves_page, read_wav, render_page,
-                         sheet_px, to_rate, trim_paper)
+from paper_sound import (BASELINE, DPI, MARGIN_MM, PAPER_DEFAULT, PITCH,
+                         full_scale, highpass, lay_out as stroke_lay_out,
+                         mm_px, paper_mm, read_curves_page, read_wav,
+                         render_page, sheet_px, to_rate, trim_paper)
 from grating import refine
 from read_tracks import (find_tracks, ink_lean, inked_span, load_ink, resample,
                          write_wav)
@@ -414,7 +414,7 @@ def prepared(path, rate, seconds=None):
     """The wav, at the sheet's rate, scaled the way paper_sound.py prints it."""
     signal, sr = read_wav(path)
     signal = to_rate(signal, sr, rate)
-    scale = np.percentile(np.abs(signal), 99.9) * HEADROOM
+    scale = full_scale(signal)
     signal = np.clip(signal / scale, -1.0, 1.0) if scale else signal * 0.0
     return signal[:seconds * rate] if seconds else signal
 

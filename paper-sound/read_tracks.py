@@ -606,6 +606,31 @@ def declick(x, joins, n):
     return x
 
 
+def full_scale(x):
+    """What to divide `x` by so that its loudest fills a lane. 0 for silence.
+
+    The one rule, in one place: print, read and the slip bench all put full
+    scale at the 99.9th percentile with HEADROOM over it, and a sheet printed
+    by one number and read back by another is off by the difference.
+    write_wav below is where that number is measured and argued.
+
+    A percentile is not a maximum, and that is the whole of this function. On
+    audio that is silence with a few samples of sound in it -- a click track,
+    a tail of digital black, anything sparse -- 99.9% of the samples ARE zero,
+    so the percentile is zero, and every caller here read a zero scale as "all
+    silence" and threw the signal away. Ten samples of 0.8 in 16000 printed
+    the same page as a file of pure silence, and read back as one. So the peak
+    is the floor under the rule: it is used only when the percentile cannot
+    see the signal at all, it can only ever make a file louder than the old
+    behaviour rather than quieter, and it is zero only when the signal is.
+    """
+    x = np.abs(np.asarray(x, float))
+    if not x.size:
+        return 0.0
+    p = float(np.percentile(x, 99.9))
+    return (p if p else float(x.max())) * HEADROOM
+
+
 def write_wav(path, x, sr):
     # Scaled by a high percentile, not by the peak. One lane the reader lost
     # swings into its neighbours at three times the legal excursion, and under
@@ -628,7 +653,7 @@ def write_wav(path, x, sr):
     # A read that is all silence -- a page lost whole, a tail of blank lanes --
     # has no percentile to scale by, and dividing by it makes the silence NaN.
     # It writes as zeros either way here; this is so that it does so on purpose.
-    scale = np.percentile(np.abs(x), 99.9) * HEADROOM
+    scale = full_scale(x)
     x = np.clip(x / scale * 0.98, -0.98, 0.98) if scale else np.zeros_like(x)
     with wave.open(path, "wb") as w:
         w.setnchannels(1)

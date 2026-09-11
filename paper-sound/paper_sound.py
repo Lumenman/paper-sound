@@ -70,9 +70,9 @@ import wave
 
 import numpy as np
 
-from read_tracks import (HEADROOM, cumsum_at, declick, find_tracks, highpass,
-                         ink_lean, ink_level, ink_rows, load_ink, odd_lane,
-                         resample, write_wav)
+from read_tracks import (HEADROOM, cumsum_at, declick, find_tracks,
+                         full_scale, highpass, ink_lean, ink_level, ink_rows,
+                         load_ink, odd_lane, resample, write_wav)
 
 # ------------------------------------------------------------------- defaults
 # Every default lives here; the command line only overrides them. Change a
@@ -828,7 +828,7 @@ def do_print(args):
     # HEADROOM is the read side's own number and is measured there: a healthy
     # file's peak sits 1.19 to 1.46 above its 99.9th percentile, so 1.3 clips
     # 0.00% of music and only the click.
-    scale = np.percentile(np.abs(signal), 99.9) * HEADROOM
+    scale = full_scale(signal)
     signal = np.clip(signal / scale, -1.0, 1.0) if scale else signal * 0.0
     over = float(np.mean(np.abs(signal) >= 1.0))
     if over > 0.0005:
@@ -1509,6 +1509,33 @@ def selftest():
         quiet[100] = 1.0
         assert despeckle(quiet, 20)[100] == 1.0, (
             "despeckle on a silent read took out the only sample in it")
+
+        # The same shape of audio one rung lower, where full scale is decided:
+        # a percentile is not a maximum. Silence with a click in it has 99.9%
+        # of its samples at zero, so its 99.9th percentile is zero, and a zero
+        # scale was read as "all silence" by print, by write_wav and by the
+        # slip bench alike -- the click thrown away by the very rule that
+        # exists to keep it. Printed, the page came out the page pure silence
+        # prints; written, the wav came back without a nonzero sample in it.
+        click = np.zeros(8 * rate)
+        click[100:103] = 0.8
+        assert np.percentile(np.abs(click), 99.9) == 0, (
+            "this check needs audio the 99.9th percentile cannot see; "
+            "the click is too long for the silence around it")
+        assert full_scale(click) > 0, "a click over silence scaled to nothing"
+        assert full_scale(np.zeros(10)) == 0, "silence scaled to something"
+        write_wav(wav, click, rate)
+        assert np.abs(read_wav(wav)[0]).max() > 0.5, (
+            "write_wav wrote a click over silence as silence")
+        silent = os.path.join(tmp, "silent.png")
+        args.out, args.start = png2, 0.0
+        with contextlib.redirect_stdout(_io.StringIO()):
+            do_print(args)
+            write_wav(wav, np.zeros_like(click), rate)
+            args.out = silent
+            do_print(args)
+        assert not np.array_equal(load_ink(png2), load_ink(silent)), (
+            "a click over silence printed the same page as silence")
 
         # A blockless sheet of a single lane cannot be segmented -- the pitch
         # estimator searches from two periods up -- so printing pads it out to

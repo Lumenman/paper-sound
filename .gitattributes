@@ -1,0 +1,13 @@
+# The working tree is CRLF: this is written and read on Windows, and the .bat
+# files want it. LF in the index, so a tool that saves a file the other way
+# round is not a rewrite of every line in it -- which is how one edit came out
+# as 3106 deleted lines once.
+* text=auto eol=crlf
+
+# Sheets, scans and audio are gitignored, but if one is ever committed on
+# purpose, nothing is to touch a byte of it.
+*.png -text
+*.wav -text
+*.tif -text
+*.zip -text
+*.pdf -text

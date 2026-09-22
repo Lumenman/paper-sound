@@ -13,6 +13,7 @@ One A4 sheet at 600 dpi holds **120 seconds at 6780 Hz**, plus two clock lanes.
 ```
 python paper-sound/paper_sound.py print song.wav -o sheet    # -> sheet_01.png, sheet_02.png, ...
 python paper-sound/paper_sound.py read sheet_01.png -o back.wav
+python paper-sound/paper_sound.py holds 480 --paper a3        # what fits, before printing anything
 python paper-sound/paper_sound.py selftest
 python paper-sound/bench.py sheet_01.png song.wav            # score a read against the original
 python paper-sound/bench.py --same a.png b.png c.png song.wav  # one sheet scanned thrice: the median
@@ -218,6 +219,29 @@ average and needs no choice about which end to trust.
 The clocks are not optional any more: their own table above prices them at
 1.6% of the sheet for 1.4–4.9 dB, and no sane run declines that.
 
+### `holds`
+
+The same sum `print` does, without a wav: how many seconds a sheet holds on
+this paper, margin and pitch. Takes the same five geometry options as `print`
+(`--paper`, `--dpi`, `--margin-mm`, `--pitch`, `--rows`), plus an optional
+number of seconds -- and then says what they cost in sheets.
+
+```
+$ python paper-sound/paper_sound.py holds 480 --paper a3 --rows 2
+a3 297x420 mm = 7016x9921 px at 600 dpi, margin 5 mm, pitch 38.7 px = 1.64 mm, 2 rows a sample
+  86.5 s at 9685 Hz a sheet, clocks yes
+  480 s of audio -> 6 sheets
+```
+
+Seconds and Hz are printed together because they are the same sheet: the
+printable height in pixels **is** the rate, and `--pitch` is pixels too, so
+twice the `--dpi` buys twice the seconds, twice the Hz and a lane half as wide
+in mm. "120 seconds" without the rate is not an answer.
+
+`capacity()` does the sum and `print` lays the sheet out by its numbers:
+`test_seconds.py` prints exactly one sheet of audio and one second more, and
+checks that one sheet comes out and then two.
+
 ### `read`
 
 Everything here is measured off the sheet. These are recovery knobs for when
@@ -403,7 +427,7 @@ dirty, then it is the only thing that helps.
 
 | | |
 |---|---|
-| `paper_sound.py` | the format: print, read, selftest |
+| `paper_sound.py` | the format: print, holds, read, selftest |
 | `read_tracks.py` | raster work — loading a page, cutting it into lanes, resampling |
 | `bench.py` | scores a read against the audio that was printed |
 | `grating.py` | gratings against the stroke: print a strip, read it, `--cross` for both directions on one sheet |

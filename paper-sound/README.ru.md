@@ -16,6 +16,7 @@
 ```
 python paper-sound/paper_sound.py print song.wav -o sheet    # -> sheet_01.png, sheet_02.png, ...
 python paper-sound/paper_sound.py read sheet_01.png -o back.wav
+python paper-sound/paper_sound.py holds 480 --paper a3           # сколько влезет, до того как печатать
 python paper-sound/paper_sound.py selftest
 python paper-sound/bench.py sheet_01.png song.wav            # оценить чтение против оригинала
 python paper-sound/bench.py --same a.png b.png c.png song.wav  # три скана одного листа: медиана
@@ -218,6 +219,29 @@ off are the sub-pixel position itself
 
 Часы больше не опция: их собственная таблица выше оценивает их в 1.6% листа за
 1.4–4.9 dB, и ни один разумный запуск от этого не отказывается.
+
+### `holds`
+
+Тот же расчёт, что делает `print`, но без wav: сколько секунд держит лист при
+такой бумаге, полях и шаге. Берёт те же пять опций геометрии, что и `print`
+(`--paper`, `--dpi`, `--margin-mm`, `--pitch`, `--rows`), плюс необязательное
+число секунд — и тогда говорит, во сколько листов они обойдутся.
+
+```
+$ python paper-sound/paper_sound.py holds 480 --paper a3 --rows 2
+a3 297x420 mm = 7016x9921 px at 600 dpi, margin 5 mm, pitch 38.7 px = 1.64 mm, 2 rows a sample
+  86.5 s at 9685 Hz a sheet, clocks yes
+  480 s of audio -> 6 sheets
+```
+
+Секунды и герцы печатаются вместе, потому что это одна и та же бумага: высота
+печатной области в пикселях **и есть** частота, а `--pitch` тоже в пикселях, —
+так что вдвое больший `--dpi` даёт вдвое больше и секунд, и герц, и вдвое более
+узкий лан в мм. «120 секунд» без частоты — не ответ.
+
+Считает это `capacity()`, и `print` раскладывает лист по её же числам:
+`test_seconds.py` печатает ровно лист звука и на секунду больше и проверяет,
+что выходит один лист и два.
 
 ### `read`
 

@@ -52,6 +52,7 @@ sheet, not the average one. Those two sheets are named throughout this file.
 
     paper_sound.py print song.wav -o sheet
     paper_sound.py print song.wav --paper letter --margin-mm 12
+    paper_sound.py holds --paper a3 --rows 2
     paper_sound.py read sheet.png -o back.wav
     paper_sound.py read sheet1.png sheet2.png -o back.wav
     paper_sound.py selftest
@@ -803,6 +804,33 @@ def lanes_that_fit(width, pitch, edge=None):
     return int((width - 2 * edge) // pitch)
 
 
+def capacity(paper, dpi, margin, pitch, rows=1, pilot=True):
+    """What a sheet holds: seconds of audio, and the rate it holds them at.
+
+    Also the two numbers the layout needs and `holds` does not print: the blank
+    edge the outermost lane needs, and whether the clocks fit. Both commands
+    come through here, so what `holds` promises is what `print` lays out.
+
+    The sheet's own margin is the blank the outermost lane wants, so only what
+    the margin falls short of a pitch has to be drawn as well. At any sane
+    margin that is nothing, and the two pitches it used to cost come back as
+    two more seconds on the sheet.
+    """
+    # A lane narrower than the stroke plus its clearance has no room left to
+    # swing in: amp goes to zero and then negative, which prints the sound
+    # inverted and unreadable rather than failing. Checked here so that `holds`
+    # cannot promise seconds `print` will refuse to lay out.
+    if (pitch - STROKE) / 2 - MARGIN < 1:
+        raise SystemExit(f"pitch: {pitch:g} px leaves no excursion; "
+                         f"needs more than {STROKE + 2 * MARGIN + 2:g}")
+    width, rate = sheet_px(paper, dpi, margin)
+    edge = max(0.0, pitch - mm_px(margin, dpi))
+    fits = lanes_that_fit(width, pitch, edge)
+    pilot = bool(pilot and PILOT and fits > 3)
+    fits -= 2 * pilot            # a clock takes a lane like any other second
+    return fits / rows, rate, edge, pilot
+
+
 def pilot_lane(rate, per=PILOT):
     """One lane of a plain tone, to be read back as the sheet's own clock.
 
@@ -817,6 +845,32 @@ def pilot_lane(rate, per=PILOT):
     """
     cycles = max(1, round(rate / per))
     return PILOT_AMP * np.sin(2 * np.pi * cycles * np.arange(rate) / rate)
+
+
+def do_holds(args):
+    """What a sheet holds, asked without an audio file to ask it about.
+
+    Seconds AND Hz, because they are the same sheet: its printable height in
+    pixels IS the rate, and --pitch is pixels too, so a finer dpi buys more of
+    both and a narrower lane in mm. "120 seconds" alone is not an answer.
+    """
+    rows = int(args.rows or 1)
+    secs, rate, _, pilot = capacity(args.paper, args.dpi, args.margin_mm,
+                                    args.pitch, rows)
+    paper_w, paper_h = paper_mm(args.paper)
+    print(f"{args.paper} {paper_w:g}x{paper_h:g} mm = "
+          f"{mm_px(paper_w, args.dpi)}x{mm_px(paper_h, args.dpi)} px at "
+          f"{args.dpi} dpi, margin {args.margin_mm:g} mm, "
+          f"pitch {args.pitch:.1f} px = {args.pitch * 25.4 / args.dpi:.2f} mm"
+          + (f", {rows} rows a sample" if rows > 1 else ""))
+    if secs < 1:
+        raise SystemExit("holds: nothing fits on that sheet")
+    print(f"  {secs:g} s at {rate} Hz a sheet, "
+          f"clocks {'yes' if pilot else 'no -- not enough lanes to spare two'}")
+    if args.seconds:
+        sheets = int(np.ceil(args.seconds / secs))
+        print(f"  {args.seconds:g} s of audio -> {sheets} "
+              f"sheet{'s' if sheets != 1 else ''}")
 
 
 def do_print(args):
@@ -847,23 +901,19 @@ def do_print(args):
         print(f"NOTE: {over:.2%} of the samples print at the edge of their "
               f"lane and are flattened there -- this audio is compressed hard "
               f"enough that its 99.9th percentile is nearly its peak")
-    width_px, rate = sheet_px(args.paper, args.dpi, args.margin_mm)
     pitch = args.pitch
     # Rows per sample. Everything below counts in ROWS -- a lane is `rate` rows
     # whatever happens -- and the audio is simply resampled `rows` times as
     # dense, so a lane holds 1/rows of a second and the ink moves half as far
     # per row at 2. Nothing else in the layout knows about it.
     rows = int(getattr(args, "rows", 1) or 1)
-    # A lane narrower than the stroke plus its clearance has no room left
-    # to swing in: amp goes to zero and then negative, which prints the
-    # sound inverted and unreadable rather than failing.
-    if (pitch - STROKE) / 2 - MARGIN < 1:
-        raise SystemExit(f"pitch: {pitch:g} px leaves no excursion; "
-                         f"needs more than {STROKE + 2 * MARGIN + 2:g}")
     # Not on the command line: the project's own table prices the clocks at
     # 1.6% of the sheet for 1.4-4.9 dB, so there is no sane reason to decline
     # them. The selftest still prints clockless sheets through here.
-    pilot = bool(getattr(args, "pilot", True) and PILOT)
+    secs, rate, edge, pilot = capacity(args.paper, args.dpi, args.margin_mm,
+                                       pitch, rows,
+                                       getattr(args, "pilot", True))
+    per_sheet = round(secs * rows)
     paper_w, paper_h = paper_mm(args.paper)
     sheet_w, sheet_h = mm_px(paper_w, args.dpi), mm_px(paper_h, args.dpi)
     signal = to_rate(signal, sr, rate)[int(args.start * rate):]
@@ -875,15 +925,6 @@ def do_print(args):
         # sample ON a row, so taking every `rows`-th row returns it untouched.
         signal = np.interp(np.arange(len(signal) * rows) / rows,
                            np.arange(len(signal)), signal)
-    # The sheet's own margin is the blank the outermost lane needs, so only
-    # what the margin falls short of a pitch has to be drawn as well. At any
-    # sane margin that is nothing, and the two pitches it used to cost come
-    # back as two more seconds on the sheet.
-    edge = max(0.0, pitch - mm_px(args.margin_mm, args.dpi))
-    fits = lanes_that_fit(width_px, pitch, edge)
-    pilot = pilot and fits > 3
-    fits -= 2 * pilot            # a clock takes a lane like any other second
-    per_sheet = fits
     if per_sheet < 1 or not len(signal):
         raise SystemExit("nothing to print")
 
@@ -948,7 +989,7 @@ def do_print(args):
             # none: the estimator searches from two periods up, so a single
             # lane is not an answer it can give. Silence is cheaper than a
             # sheet nothing can read.
-            lanes = min(2, fits)
+            lanes = min(2, per_sheet)
         # A lane is a whole second whatever happens, so the tail is padded with
         # silence -- a straight stroke down the middle of its lane.
         chunk = np.pad(chunk, (0, max(0, lanes * rate - len(chunk))))
@@ -2026,24 +2067,37 @@ def main():
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    pr = sub.add_parser("print", help="audio -> a sheet to print")
+    def sheet_args(q):
+        """The geometry that decides what a sheet holds -- `print` lays it out
+        and `holds` only prices it, so both take the same five."""
+        q.add_argument("--paper", default=PAPER_DEFAULT,
+                       help=f"{', '.join(PAPER)}, or WxH in mm (default {PAPER_DEFAULT})")
+        q.add_argument("--dpi", type=int, default=DPI,
+                       help=f"print resolution (default {DPI}). The sheet's "
+                            f"height in px is its sample rate, so this moves "
+                            f"the seconds and the Hz together")
+        q.add_argument("--margin-mm", type=float, default=MARGIN_MM,
+                       help=f"mm the printer cannot reach (default {MARGIN_MM:g})")
+        q.add_argument("--pitch", type=float, default=PITCH,
+                       help=f"lane pitch in px (default {PITCH:g} = "
+                            f"{PITCH * 25.4 / DPI:.2f} mm at {DPI} dpi)")
+        q.add_argument("--rows", type=int, default=1, choices=ROWS,
+                       help="printed rows per audio sample (default: 1). 2 "
+                            "halves the ink's slope per row and the seconds a "
+                            "sheet holds; the clocks carry it, so `read` needs "
+                            "no flag")
+        return q
+
+    pr = sheet_args(sub.add_parser("print", help="audio -> a sheet to print"))
     pr.add_argument("audio", help="16-bit PCM wav")
     pr.add_argument("-o", "--out", help="output PNG (default: <audio>.png)")
-    pr.add_argument("--paper", default=PAPER_DEFAULT,
-                    help=f"{', '.join(PAPER)}, or WxH in mm (default {PAPER_DEFAULT})")
-    pr.add_argument("--dpi", type=int, default=DPI,
-                    help=f"print resolution (default {DPI})")
-    pr.add_argument("--margin-mm", type=float, default=MARGIN_MM,
-                    help=f"mm the printer cannot reach (default {MARGIN_MM:g})")
-    pr.add_argument("--pitch", type=float, default=PITCH,
-                    help=f"lane pitch in px (default {PITCH:g} = "
-                         f"{PITCH * 25.4 / DPI:.2f} mm at {DPI} dpi)")
-    pr.add_argument("--rows", type=int, default=1, choices=ROWS,
-                    help="printed rows per audio sample (default: 1). 2 halves "
-                         "the ink's slope per row and the seconds a sheet "
-                         "holds; the clocks carry it, so `read` needs no flag")
     pr.add_argument("--start", type=float, default=0.0,
                     help="seconds to skip before the first sheet")
+
+    hd = sheet_args(sub.add_parser(
+        "holds", help="seconds a sheet holds, with no audio to print yet"))
+    hd.add_argument("seconds", nargs="?", type=float,
+                    help="seconds of audio to price in sheets")
 
     rd = sub.add_parser("read", help="a scan -> audio")
     rd.add_argument("scans", nargs="+", help="scanned sheets, in playing order")
@@ -2081,7 +2135,7 @@ def main():
         if args.cmd == "selftest":
             selftest()
         else:
-            (do_print if args.cmd == "print" else do_read)(args)
+            {"print": do_print, "holds": do_holds}.get(args.cmd, do_read)(args)
     except ValueError as e:
         raise SystemExit(f"{args.cmd}: {e}")     # an unreadable sheet is an
                                                  # answer, not a stack trace

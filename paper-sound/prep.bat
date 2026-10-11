@@ -1,14 +1,14 @@
 @echo off
 rem Подготовка речевого аудио для печати paper_sound.py: A4, 600 dpi.
 rem
-rem   prep.bat [вход.wav] [выход.wav]
+rem   prep.bat [вход.wav] [выход.wav]   (по умолчанию data\input.wav)
 rem
 rem 6780 Гц - не выбор, а высота печатной области A4 в пикселях при 600 dpi:
 rem (297мм - 2*5мм полей) / 25.4 * 600. Ресемпл делается здесь, чтобы
 rem to_rate() в paper_sound.py увидел rate == sr и не трогал сигнал своим
 rem box-фильтром - полифазный rate -v заметно чище.
 rem
-rem Печатать:  python paper_sound.py print out.wav --pitch 38 -o sheet
+rem Печатать:  python paper-sound/paper_sound.py print data/out.wav --pitch 38 -o data/sheet
 rem            шаг 38 px вместо 39 -> 122 с на лист, хватает на все 120.1 с.
 
 setlocal
@@ -16,9 +16,9 @@ set SOX=%~dp0..\sox\sox.exe
 rem sox: сначала свой, рядом с проектом, потом любой из PATH.
 if not exist "%SOX%" set SOX=sox
 set IN=%~1
-if "%IN%"=="" set IN=input.wav
+if "%IN%"=="" set IN=%~dp0..\data\input.wav
 set OUT=%~2
-if "%OUT%"=="" set OUT=out.wav
+if "%OUT%"=="" set OUT=%~dp0..\data\out.wav
 
 rem Ёмкость листа при PITCH=38.7 по умолчанию. do_print берёт ceil() от длины,
 rem поэтому 120.1 с - это уже 121 и второй лист ради тишины в хвосте.

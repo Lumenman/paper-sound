@@ -1,7 +1,7 @@
 @echo off
 rem Цепочка из 01.sh (блок pre-processing audio), перецеленная на 6780 Гц.
 rem
-rem   prep2.bat [вход.wav] [выход.wav]
+rem   prep2.bat [вход.wav] [выход.wav]   (по умолчанию data\input.wav)
 rem
 rem Отличия от 01.sh только там, где того требует другой носитель:
 rem   - без прогона через 22050/pcm_u8: то был формат wav2pbm, а не обработка
@@ -18,9 +18,9 @@ set SOX=%~dp0..\sox\sox.exe
 rem sox: сначала свой, рядом с проектом, потом любой из PATH.
 if not exist "%SOX%" set SOX=sox
 set IN=%~1
-if "%IN%"=="" set IN=input.wav
+if "%IN%"=="" set IN=%~dp0..\data\input.wav
 set OUT=%~2
-if "%OUT%"=="" set OUT=out2.wav
+if "%OUT%"=="" set OUT=%~dp0..\data\out2.wav
 set SECS=120
 
 "%SOX%" "%IN%" -b 16 "%OUT%" ^

@@ -18,7 +18,7 @@ rem до сих пор не были объяснены.
 rem
 rem prep.bat с предыскажением, снятым с бумаги, а не подобранным на слух.
 rem
-rem   prep4.bat [вход.wav] [выход.wav]
+rem   prep4.bat [вход.wav] [выход.wav]   (по умолчанию data\input.wav)
 rem
 rem Пишет ДВА файла: <выход>.wav — тот, что печатать, и <выход>_flat.wav —
 rem та же цепочка без предыскажения. Второй печатать не надо, он нужен, чтобы
@@ -110,9 +110,9 @@ set SOX=%~dp0..\sox\sox.exe
 rem sox: сначала свой, рядом с проектом, потом любой из PATH.
 if not exist "%SOX%" set SOX=sox
 set IN=%~1
-if "%IN%"=="" set IN=input.wav
+if "%IN%"=="" set IN=%~dp0..\data\input.wav
 set OUT=%~2
-if "%OUT%"=="" set OUT=out4.wav
+if "%OUT%"=="" set OUT=%~dp0..\data\out4.wav
 rem Имя плоского файла делается подстановкой .wav -> _flat.wav, так что без
 rem расширения он затёр бы сам печатный файл. Дописываем.
 if /i not "%OUT:~-4%"==".wav" set OUT=%OUT%.wav
@@ -159,9 +159,9 @@ rem КАК СУДИТЬ. Не по `bench sheet.png %OUT%`: этот счёт м
 rem ПЕЧАТНОМУ файлу, а печатный файл предыскажён нарочно, так что чем сильнее
 rem предыскажение, тем хуже он выглядит. Считать надо против плоского:
 rem
-rem   python paper-sound/paper_sound.py print %OUT% -o sheet4
+rem   python paper-sound/paper_sound.py print %OUT% -o data/sheet4
 rem   ... напечатать, отсканировать трижды, снимая лист со стекла ...
-rem   python paper-sound/bench.py --same s1.png s2.png s3.png %FLAT%
+rem   python paper-sound/bench.py --same data/s1.png data/s2.png data/s3.png %FLAT%
 rem
 rem И то же самое для листа с prep.bat, против ТОГО ЖЕ %FLAT% — тогда сравнение
 rem однорукое. Меньше трёх сканов на лист не берём: §17.4, два скана одного

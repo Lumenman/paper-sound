@@ -4,7 +4,7 @@ rem к prep2. Ухо предпочло prep2, но тот отдаёт ~2.6 dB 
 rem бумаге (крест 7.5 против 4.9); виновником звука prep оказался подъём
 rem -40 -> -14 (+26 dB) в первом compand, а не финальный клип.
 rem
-rem   prep3.bat [вход.wav] [выход.wav]
+rem   prep3.bat [вход.wav] [выход.wav]   (по умолчанию data\input.wav)
 rem
 rem Отличие от prep.bat одно: подъём тихого смягчён - -40 -> -22 (+18 dB) и
 rem -20 -> -12 (+8) вместо -40 -> -14 и -20 -> -9. Гейт пауз (-65 -> -90)
@@ -15,9 +15,9 @@ set SOX=%~dp0..\sox\sox.exe
 rem sox: сначала свой, рядом с проектом, потом любой из PATH.
 if not exist "%SOX%" set SOX=sox
 set IN=%~1
-if "%IN%"=="" set IN=input.wav
+if "%IN%"=="" set IN=%~dp0..\data\input.wav
 set OUT=%~2
-if "%OUT%"=="" set OUT=out3.wav
+if "%OUT%"=="" set OUT=%~dp0..\data\out3.wav
 set SECS=120
 
 rem СКОЛЬКО ЖАТЬ. Измерено на input.wav со смягчённым compand выше

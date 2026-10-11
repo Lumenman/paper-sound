@@ -10,27 +10,31 @@ sheet is a picture of its own contents.
 
 One A4 sheet at 600 dpi holds **120 seconds at 6780 Hz**, plus two clock lanes.
 
+Code is in `paper-sound/`, the bundled sox in `sox/`, and sheets, scans and
+audio in `data/` (gitignored). Commands run from the repository root:
+
 ```
-python paper-sound/paper_sound.py print song.wav -o sheet    # -> sheet_01.png, sheet_02.png, ...
-python paper-sound/paper_sound.py read sheet_01.png -o back.wav
-python paper-sound/paper_sound.py holds 480 --paper a3        # what fits, before printing anything
+python paper-sound/paper_sound.py print data/song.wav -o data/sheet    # -> data/sheet_01.png, ...
+python paper-sound/paper_sound.py read data/sheet_01.png -o data/back.wav
+python paper-sound/paper_sound.py holds 480 --paper a3                  # what fits, before printing anything
 python paper-sound/paper_sound.py selftest
-python paper-sound/bench.py sheet_01.png song.wav            # score a read against the original
-python paper-sound/bench.py --same a.png b.png c.png song.wav  # one sheet scanned thrice: the median
+python paper-sound/bench.py data/sheet_01.png data/song.wav            # score a read against the original
+python paper-sound/bench.py --same data/a.png data/b.png data/c.png data/song.wav  # one sheet scanned thrice: the median
+paper-sound\prep.bat                                                    # data\input.wav -> data\out.wav, ready to print
 ```
 
 A 120-second recording, on the defaults:
 
 ```
-$ python paper-sound/paper_sound.py print song.wav -o sheet
-song.wav: 120 s at 6780 Hz, 120 per sheet -> 1 sheet
+$ python paper-sound/paper_sound.py print data/song.wav -o data/sheet
+data/song.wav: 120 s at 6780 Hz, 120 per sheet -> 1 sheet
   a4 210x297 mm = 4961x7016 px at 600 dpi, margin 5 mm, pitch 38.7 px = 1.64 mm, clock yes
-  sheet.png: 120 lanes, seconds 0-120, ink 4712x6780 px = 199x287 mm, margins 5.2 mm sides, 5.0 mm ends
+  data/sheet.png: 120 lanes, seconds 0-120, ink 4712x6780 px = 199x287 mm, margins 5.2 mm sides, 5.0 mm ends
 
-$ python paper-sound/paper_sound.py read sheet.png -o back.wav
-sheet.png: 2 clock lanes found, carriage ripple 0.07 samples rms
-sheet.png: 4961x7016 px, 120 lanes, 6780 Hz
-wrote back.wav: 813600 samples, 120.0 s at 6780 Hz
+$ python paper-sound/paper_sound.py read data/sheet.png -o data/back.wav
+data/sheet.png: 2 clock lanes found, carriage ripple 0.07 samples rms
+data/sheet.png: 4961x7016 px, 120 lanes, 6780 Hz
+wrote data/back.wav: 813600 samples, 120.0 s at 6780 Hz
 ```
 
 Lane counts are seconds of sound throughout: the two clocks are printed and

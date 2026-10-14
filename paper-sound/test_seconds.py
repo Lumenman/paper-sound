@@ -89,4 +89,6 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # Every mkdtemp() above lands in this one, and it goes when the run does.
+    with tempfile.TemporaryDirectory() as tempfile.tempdir:
+        main()

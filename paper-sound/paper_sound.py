@@ -70,8 +70,9 @@ import os
 import wave
 
 import numpy as np
+from PIL import Image
 
-from read_tracks import (HEADROOM, cumsum_at, declick, find_tracks,
+from read_tracks import (cumsum_at, declick, find_tracks,
                          full_scale, highpass, ink_lean, ink_level, ink_rows,
                          load_ink, odd_lane, resample, write_wav)
 
@@ -874,8 +875,6 @@ def do_holds(args):
 
 
 def do_print(args):
-    from PIL import Image
-
     signal, sr = read_wav(args.audio)
     # Scaled by the same high percentile write_wav() reads back with, not by
     # the peak. The excursion IS the carrier -- a sample is where the stroke
@@ -1881,10 +1880,9 @@ def selftest():
     # scanner here does that to pHYs -- the chunk that says dpi and nothing
     # else, which nothing in this reader reads -- and PIL refuses the whole
     # image over it. Mended in memory; a critical chunk is not ours to mend.
-    from PIL import Image as _Image
     with tempfile.TemporaryDirectory() as tmp:
         bad = os.path.join(tmp, "bad.png")
-        _Image.fromarray(np.uint8(sheet_ink[:200, :200])).save(bad, dpi=(600, 600))
+        Image.fromarray(np.uint8(sheet_ink[:200, :200])).save(bad, dpi=(600, 600))
         raw = bytearray(open(bad, "rb").read())
 
         def chunk_at(name):
@@ -1902,7 +1900,7 @@ def selftest():
         # back as the same page.
         deep = os.path.join(tmp, "deep.png")
         page8 = np.uint8(sheet_ink[:200, :200])
-        _Image.fromarray(page8.astype(np.uint16) * 257).save(deep)
+        Image.fromarray(page8.astype(np.uint16) * 257).save(deep)
         assert np.abs(load_ink(deep).astype(int)
                       - load_ink(bad).astype(int)).max() <= 1, (
             "a 16-bit scan did not read back as the 8-bit page it is")
@@ -1914,7 +1912,7 @@ def selftest():
         # whatever happens, the anti-aliased edge having been thrown away
         # before this program saw it; what it may not be is a page of ink.
         line_art = os.path.join(tmp, "bitonal.png")
-        _Image.fromarray(page8).convert("1", dither=_Image.NONE).save(line_art)
+        Image.fromarray(page8).convert("1", dither=Image.NONE).save(line_art)
         ink1 = load_ink(line_art)
         assert set(np.unique(ink1)) <= {0, 255}, (
             f"a bitonal page read back as {np.unique(ink1)[:5]}")
@@ -2136,7 +2134,7 @@ def main():
             selftest()
         else:
             {"print": do_print, "holds": do_holds}.get(args.cmd, do_read)(args)
-    except ValueError as e:
+    except (ValueError, OSError) as e:          # OSError: Pillow's not-an-image
         raise SystemExit(f"{args.cmd}: {e}")     # an unreadable sheet is an
                                                  # answer, not a stack trace
 

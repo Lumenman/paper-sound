@@ -29,5 +29,6 @@ def score(got_path, ref_path, lag=64):
           f"below .5 {bad.sum()}/{len(per)}{f' ({flat} flat)' if flat else ''}  "
           f"worst {' '.join(f'{v:.2f}' for v in np.sort(per)[:3])}")
 
-for pair in sys.argv[1:]:
-    score(*pair.rsplit(":", 1))
+if __name__ == "__main__":
+    for pair in sys.argv[1:]:
+        score(*pair.rsplit(":", 1))

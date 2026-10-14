@@ -35,18 +35,7 @@ def report(got, ref, label, top=8):
         print(f"    {fr:8.1f} Hz  {e:+6.1f} dB over the source   "
               f"(a feature every {sr/fr:6.2f} rows)")
 
-for a in sys.argv[1:]:
-    g, r, lab = a.rsplit(":", 2)
-    report(g, r, lab)
-
-def bands(got, ref, label, step=200):
-    x, sr = read_wav(got); y, rate = read_wav(ref); y = to_rate(y, rate, sr)
-    n = min(len(x), len(y))
-    f, px = avg_spec(highpass(x[:n], BASELINE), sr)
-    _, py = avg_spec(highpass(y[:n], BASELINE), sr)
-    ex = 10*np.log10((px+1e-30)/(py+1e-30)); ex -= np.median(ex)
-    print(f"{label:22s}", end="")
-    for lo in range(0, int(sr/2), step):
-        m = (f >= lo) & (f < lo+step)
-        print(f"{np.median(ex[m]):+6.1f}", end="")
-    print()
+if __name__ == "__main__":
+    for a in sys.argv[1:]:
+        g, r, lab = a.rsplit(":", 2)
+        report(g, r, lab)

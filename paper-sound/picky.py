@@ -650,6 +650,12 @@ def main(argv=None):
     STICKY = int(take_opt(a, "--sticky", STICKY))
     INVERT = not take_flag(a, "--no-invert")
     defaults = ["w", "0", "1", "d", "1", "1", "0.95", "all", "44100", "24"]
+    # All ten options come before the first file. A file among them is read as
+    # an option and dies naming the option, which points the wrong way.
+    for i, x in enumerate(a[:10]):
+        if Path(x).suffix and glob.glob(x):
+            die(f"{x}: a file where option {i + 1} goes -- all ten options "
+                f"come before the files ('picky.py h' lists them).")
     vals = a[:10] + defaults[len(a):]
     # expand glob patterns here: cmd.exe and PowerShell pass them through as-is
     files = [f for x in a[10:] for f in (sorted(glob.glob(x)) or [x])]
@@ -667,6 +673,8 @@ def main(argv=None):
         return
 
     Emode = int(to_num(Emode, "processing mode"))
+    if Emode not in (0, 1, 2, 3, 50, 51, 52):
+        die(f"{Emode}: Invalid processing mode; 'picky.py p' lists them.")
     Ipower = to_num(Ipower, "power to which pixel intensity values will be raised")
     corr1 = int(to_num(corr1, "slope and DC offset adjustment"))
     Pc = to_num(Pc, "impulse rejection threshold")

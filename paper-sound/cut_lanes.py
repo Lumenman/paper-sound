@@ -288,7 +288,11 @@ def cut(path, outdir, pitch=None, bleed=BLEED, turn=None, negative=NEGATIVE,
     # sheet whose clocks cannot say which way up it lay; it is not a statement
     # that the sheet has no clocks.
     ends, rows_said = clocks(ink, lanes) if PILOT else ([None] * 2, [None] * 2)
-    speed = rows_said[0] if rows_said[0] == rows_said[1] else None
+    # One clock is enough to round by: a damaged clock says nothing, which is
+    # not the same as saying otherwise. Only two clocks that disagree leave
+    # the speed unread -- and one that says 2 alone costs a row of picture.
+    said_rows = {r for r in rows_said if r}
+    speed = said_rows.pop() if len(said_rows) == 1 else None
     if turn is None:
         # The rule itself is paper_sound's, called rather than copied: this
         # reader turns the IMAGE where that one turns the AUDIO, and the two
@@ -684,6 +688,23 @@ def selftest():
         with Image.open(os.path.join(out3, f"{2:0{PAD}d}.{FORMAT}")) as im:
             assert im.size[1] % 2 == 0, (
                 f"a forced turn cut a two-row sheet into strips of "
+                f"{im.size[1]} rows, which is half a sample short")
+
+        # The same sheet with its far clock gone to plain audio. One clock
+        # still says two rows a sample, and it used to be warned about and
+        # then ignored: the strips stayed odd because the clocks did not agree.
+        one = np.concatenate([pilot_lane(odd, 2 * PILOT), sig2, sig2[:odd]])
+        e1, _ = lay_out(one, odd, n + 2, pitch, 0.0)
+        Image.fromarray(255 - np.round(render_page(e1, pitch, w2) * 255)
+                        .astype(np.uint8)).save(os.path.join(tmp, "one.png"),
+                                                dpi=(DPI, DPI))
+        out4 = os.path.join(tmp, "one_clock")
+        os.makedirs(out4, exist_ok=True)
+        with contextlib.redirect_stdout(_io.StringIO()):
+            cut(os.path.join(tmp, "one.png"), out4, turn=False)
+        with Image.open(os.path.join(out4, f"{2:0{PAD}d}.{FORMAT}")) as im:
+            assert im.size[1] % 2 == 0, (
+                f"one clock saying two rows a sample cut strips of "
                 f"{im.size[1]} rows, which is half a sample short")
 
         # The claim this file makes about its two containers, actually made.

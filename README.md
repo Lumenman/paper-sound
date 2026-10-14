@@ -40,7 +40,7 @@ wrote data/back.wav: 813600 samples, 120.0 s at 6780 Hz
 Lane counts are seconds of sound throughout: the two clocks are printed and
 used, and counted by neither side.
 
-Needs `numpy` and `pillow`.
+Needs `numpy` and `pillow`; `picky.py` also needs `scipy`.
 
 The program lives in `paper-sound/`, and so do the Russian docs: a first-time
 guide (printing, scanning, calibration, testing, the scanner's whine) in

@@ -5,8 +5,8 @@ rem   prep.bat [вход.wav] [выход.wav]   (по умолчанию data\i
 rem
 rem 6780 Гц - не выбор, а высота печатной области A4 в пикселях при 600 dpi:
 rem (297мм - 2*5мм полей) / 25.4 * 600. Ресемпл делается здесь, чтобы
-rem to_rate() в paper_sound.py увидел rate == sr и не трогал сигнал своим
-rem box-фильтром - полифазный rate -v заметно чище.
+rem to_rate() в paper_sound.py увидел rate == sr и не ресемплировал второй
+rem раз: его оконный sinc честный, но один ресемпл лучше двух.
 rem
 rem Печатать:  python paper-sound/paper_sound.py print data/out.wav --pitch 38 -o data/sheet
 rem            шаг 38 px вместо 39 -> 122 с на лист, хватает на все 120.1 с.

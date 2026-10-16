@@ -189,7 +189,7 @@ python paper-sound/paper_sound.py print song.wav --rows 2
 | `--dpi` | `600` | print resolution; the PNG carries it |
 | `--margin-mm` | `5` | margins the printer cannot reach |
 | `--pitch` | `38.7` | lane pitch in px. Wider is cleaner, but fewer seconds a sheet |
-| `--rows` | `1` | rows per sample; `2` gives +1.9 dB at the cost of half the time |
+| `--rows` | `1` | rows per sample; `2` gives +2.1 dB at the cost of half the time |
 | `--start` | `0` | how many seconds to skip before the first sheet |
 
 `holds` takes the same five geometry options: the same calculation without a
@@ -230,16 +230,23 @@ scanned at. STROKE 8 and --pitch 77 would keep the sheet the size it is at 600 d
 
 **About `--rows 2`.** Each sample is drawn over two rows: the ink's slope per
 row is halved, the sheet holds half as much sound, and the read comes out
-1.9 dB cleaner. Nothing needs encoding: the clocks carry the number themselves,
+2.1 dB cleaner (the median of four scans of one sheet against a control). Nothing needs encoding: the clocks carry the number themselves,
 and `read` asks for no flag. Fractional values (1.5) are impossible, see §12.
 
 ---
 
 ## 5. Scanning
 
-**Greyscale, the same dpi, every adjustment off.** No auto-contrast, no levels,
-no white or black point, no sharpening, no deskew, **not bitonal**. 8 or
-16 bit, either is fine.
+**The same dpi, every adjustment off.** No auto-contrast, no levels, no white
+or black point, no sharpening, no deskew, **not bitonal**. 8 or 16 bit, either
+is fine.
+
+**Greyscale or colour: try both.** On the flatbed here the greyscale mode tops
+out at 151 of 255 between paper and ink, while the colour mode reaches 219 in
+luma and 254 in red, and that range is exactly the partial-coverage edge the
+sub-pixel position lives in. A colour scan costs nothing but three times the
+file: the reader reads one channel, and on grey scans the three channels came
+back byte-identical.
 
 Why so strict: the carrier is the fraction of a pixel at the stroke's edge,
 where the ink covers a pixel partially. A white point zeroes everything paler
@@ -341,10 +348,12 @@ sheet.png   r=0.9383  lanes 57 at 6574 Hz  2 clocks  median 0.9354
   not failures.
 
 **What to expect.** A sheet straight out of `print`, never on paper:
-**r > 0.999**. Less means the reader is broken, not the paper. Printed and
-scanned: **0.92…0.98**, and the difference between sheets is the scanner, not
-the format. **Below 0.85 there is something to look for**, and the warnings in
-§7 are where to start.
+**r > 0.999**, that is above 27 dB (32.6 here). Less means the reader is
+broken, not the paper. Printed and scanned: **0.92…0.985, that is 7.4…14.9 dB**;
+the good sheets here read 11.8–12.3 dB, and up to 14.9 at `--rows 2`. The
+difference between sheets is the scanner, not the format. **Below 0.85
+(4.2 dB) there is something to look for**, and the warnings in §7 are where to
+start.
 
 **`--same`** says this is one sheet scanned several times, and adds the median
 and the spread. Use it before you believe some change improved anything: the
@@ -397,7 +406,8 @@ where the pair does show.
 **Checklist for the first sheet from a new pair:**
 
 1. print at 600 dpi, 100%, actual size;
-2. scan in greyscale at 600 dpi with **every adjustment off**;
+2. scan at 600 dpi, greyscale and colour, with **every adjustment off**, and
+   keep whichever reads better;
 3. `read`, and read the warnings (§7); they are the pair's diagnostics;
 4. `bench.py`, and compare against the targets in §8;
 5. if it is low, `--aperture` first, everything else after;
@@ -532,7 +542,7 @@ and orientation is lost silently.
 **Can I print an "error map" as a second set of curves, to read more
 accurately?** Measured: the error repeats between scans of one sheet at
 ρ ≈ 0.6, and a perfect map would give +1.4 dB of median for half the sheet.
-Exactly the same half sheet buys `--rows 2`, which gives +1.9 dB and needs
+Exactly the same half sheet buys `--rows 2`, which gives +2.1 dB and needs
 neither a second pass nor a tie to the scanner.
 
 **Why does the read sound quieter or louder than the original?** It is

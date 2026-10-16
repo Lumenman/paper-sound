@@ -42,8 +42,10 @@ used, and counted by neither side.
 
 Needs `numpy` and `pillow`; `picky.py` also needs `scipy`.
 
-The program lives in `paper-sound/`, and so do the Russian docs: a first-time
-guide (printing, scanning, calibration, testing, the scanner's whine) in
+The program lives in `paper-sound/`, and so do the docs: a first-time guide
+(printing, scanning, calibration, testing, the scanner's whine) in
+`paper-sound/GUIDE.md`, and the story of what was tried and what each step cost
+in `paper-sound/ARTICLE.md`. In Russian: the same guide in
 `paper-sound/GUIDE.ru.md`, the same format description as this file in
 `paper-sound/README.ru.md`, and the lab journal -- every number and every dead
 end -- in `paper-sound/LAB.ru.md`. This file is the format itself.

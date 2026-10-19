@@ -219,9 +219,10 @@ its own.
 - **The reader has one live knob, `--aperture`**: the width of the centroid
   window. Too narrow on a clean read costs 18 dB; too wide on a dirty one costs
   0.15 dB. So it stays wide by default.
-- **The next sheets** are going to a new laser printer, an inkjet and a better
-  scanner. If the template fit doesn't win on a differently shaped stroke there
-  either, it gets deleted.
+- **The next sheets** went to a new laser printer and an inkjet, scanned three
+  times each on a new scanner. The template fit lost on all twelve scans, worse
+  on the inkjet's differently shaped stroke than on the laser's, and was
+  deleted. The default aperture was within 0.05 dB of the best on both.
 
 The lesson that kept coming back is that most of the decibels lost here weren't
 lost in the format. They were lost in the measurement: a lag searched the wrong

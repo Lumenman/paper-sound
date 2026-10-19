@@ -212,121 +212,6 @@ def lane_monotone(ink, x0, x1, span, drift, narrow=None, sticky=None,
     return filled(pos)
 
 
-OVER = 8      # template samples per px: the shifts each row is tried at
-PASSES = 3    # template from the aim, refit, template from the fit, refit...
-TILT = 1      # 1: the paper under the window may slope; 0: flat
-REACH = 2.0   # px a row's fit may move from its first guess. The window is
-              # four strokes wide, so the stroke's own edge is the only other
-              # thing in it a free shift could lock onto
-
-
-def template(prof, at):
-    """The lane's mean stroke, from every row lined up on its own position.
-
-    prof: (rows, w), at: (rows,) the stroke's column in each row. Each row is
-    scaled to 0..1 first -- the gain and the paper under it are fitted per row
-    anyway, so only the SHAPE is averaged -- and binned at 1/OVER px. The
-    result is centred on its own centroid so that the passes do not walk it
-    out of the window between them.
-    -> (u, t): offsets from the stroke's centre and the profile there.
-    """
-    rows, w = prof.shape
-    lo, hi = prof.min(1, keepdims=True), prof.max(1, keepdims=True)
-    ok = (hi - lo)[:, 0] > 0
-    q = (prof[ok] - lo[ok]) / (hi - lo)[ok]
-    # A fit may land past the window's edge; binned there, it would fall off
-    # the template's own range. Its row still shapes the template, pinned.
-    off = np.arange(w)[None, :] - np.clip(at[ok, None], 0, w - 1)
-    k = np.round(off * OVER).astype(int) + w * OVER
-    n = 2 * w * OVER + 1
-    tot = np.bincount(k.ravel(), q.ravel(), n)
-    cnt = np.bincount(k.ravel(), minlength=n)
-    u = (np.arange(n) - w * OVER) / OVER
-    seen = cnt > 0
-    t = np.interp(u, u[seen], tot[seen] / cnt[seen])
-    return u - (u * t).sum() / t.sum(), t
-
-
-def above_floor(prof):
-    """Each row's centroid of what stands above its own darkest-paper pixel.
-
-    The template's first guess, and it has to be this rather than the aim the
-    window came with. A guess biased by the paper does not average out of the
-    template -- the bias is a function of where the stroke sits, so every row
-    at that place is lined up wrong the same way, the template learns the
-    error as part of the stroke's shape, and the passes keep it: 0.17 px on
-    the selftest's rows from the plain centroid, 0.02 from this.
-    """
-    q = prof - prof.min(1, keepdims=True)
-    den = q.sum(1)
-    with np.errstate(invalid="ignore", divide="ignore"):
-        return np.where(den > 0, (q * np.arange(prof.shape[1])).sum(1) / den,
-                        prof.shape[1] / 2)
-
-
-def fit(prof, u, t, guess):
-    """Each row's shift under background + gain * template(x - shift).
-
-    Background and gain are linear, so they are solved in closed form for
-    every trial shift and what is left to search is one number: the shift
-    whose template, both centred, correlates best with the row. Tried on a
-    grid of 1/OVER px within REACH of the guess, and the peak refined by a
-    parabola through its neighbours. Rows whose best fit has negative gain --
-    no stroke in the window at all -- come back NaN.
-    """
-    rows, w = prof.shape
-    x = np.arange(w)
-    shifts = np.arange(np.floor((guess.min() - REACH) * OVER),
-                       np.ceil((guess.max() + REACH) * OVER) + 1) / OVER
-    T = np.interp(x[None, :] - shifts[:, None], u, t)    # (shifts, w)
-    # The paper under the stroke as a + b*x rather than a constant: what the
-    # window holds besides the stroke is projected out of both sides.
-    B = np.stack([np.ones(w), x - x.mean()][:1 + TILT])
-    B /= np.sqrt((B * B).sum(1, keepdims=True))
-    T -= (T @ B.T) @ B
-    T /= np.maximum(np.sqrt((T * T).sum(1, keepdims=True)), 1e-12)
-    c = (prof - (prof @ B.T) @ B) @ T.T                  # (rows, shifts)
-    c[np.abs(shifts[None, :] - guess[:, None]) > REACH] = -np.inf
-    i = np.clip(np.argmax(c, 1), 1, len(shifts) - 2)
-    r = np.arange(rows)
-    a, b, d = c[r, i - 1], c[r, i], c[r, i + 1]
-    with np.errstate(invalid="ignore", divide="ignore"):
-        step = np.where(np.isfinite(a) & np.isfinite(d) & (a - 2 * b + d < 0),
-                        0.5 * (a - d) / (a - 2 * b + d), 0.0)
-    return np.where(b > 0, shifts[i] + np.clip(step, -0.5, 0.5) / OVER,
-                    np.nan)
-
-
-def lane_template(ink, x0, x1, span, drift, narrow=None, sticky=None,
-                  width=None):
-    """The stroke's position by fitting the lane's own mean stroke to each row.
-
-    The centroid assumes nothing about the stroke and so pays for everything
-    in its window: paper, grime, a gain that moves the weights. The axis
-    assumes the stroke is symmetric. This assumes the stroke has ONE shape --
-    whatever printer, paper and scanner made of it, measured off this lane
-    rather than guessed as a Gaussian -- and fits only where it is, how dark,
-    and what it sits on. Background and gain are free per row, so a lift in
-    the paper or a pale stretch of ink moves nothing; a curve that bends the
-    greyscale still does, because it changes the shape.
-
-    Measured, LAB 27: worse than the centroid on all fourteen paired sheets,
-    -0.2 to -0.8 dB at an 8 px window and down to -8 on the two-speed ones.
-    The noise on these sheets is inside the stroke, not under it. Kept until
-    a stroke of another shape -- another printer -- has been asked.
-    """
-    got = window(ink, x0, x1, span, drift, narrow, sticky, width)
-    if got is None:
-        return None
-    start, geom, prof, _ = got
-    at = above_floor(prof)
-    for _ in range(PASSES):
-        u, t = template(prof, at)
-        new = fit(prof, u, t, at)
-        at = np.where(np.isfinite(new), new, at)
-    return filled(start - geom + new)
-
-
 def blots(ink, n, radius, seed=0):
     """Paste n discs of solid ink at random, the way dust and specks land.
 
@@ -400,8 +285,7 @@ def opt(argv, flag, cast=int):
 
 def main(argv):
     global TOPS, WINDOW
-    ests = {"axis": lane_axis, "monotone": lane_monotone,
-            "template": lane_template}
+    ests = {"axis": lane_axis, "monotone": lane_monotone}
     which, argv = opt(argv, "--est", str)
     other = ests[which[0]] if which else lane_axis
     spots, argv = opt(argv, "--blots")
@@ -495,37 +379,9 @@ def selftest():
     page[0, 0] = 200
     assert (blots(page, 1, 3) != page).sum() == 29, "a r=3 disc is 29 px"
 
-    # The template fit, on rows whose paper and ink both wander: background
-    # 0..60 and gain 0.5..1 drawn per row, under a lopsided stroke no Gaussian
-    # describes. The template is not given -- it is learned from the rows,
-    # starting from the centroid, which is exactly what it has to undo: a
-    # first moment over 24 px of lifted paper is dragged to the window's
-    # middle, by more the more paper there is.
-    rng = np.random.default_rng(1)
-    rows = 2000
-    c = 12 + 1.5 * np.sin(np.arange(rows) / 37.0)
-    d = x[None, :] - c[:, None]
-    stroke = np.where(d < 0, np.exp(-0.5 * (d / 1.0) ** 2),
-                      np.exp(-0.5 * (d / 1.8) ** 2))
-    bg = rng.uniform(0, 60, (rows, 1))
-    prof = bg + rng.uniform(0.5, 1.0, (rows, 1)) * 180 * stroke
-    prof += rng.normal(0, 1.0, prof.shape)
-    cen_err = np.std((prof * x).sum(1) / prof.sum(1) - c)
-    at = above_floor(prof)
-    for _ in range(PASSES):
-        u, t = template(prof, at)
-        new = fit(prof, u, t, at)
-        at = np.where(np.isfinite(new), new, at)
-    fit_err = np.std(new - c)          # std: a template's origin is arbitrary
-    assert fit_err < 0.03, f"the template fit is {fit_err:.3f} px out"
-    assert cen_err > 10 * fit_err, (
-        f"the centroid {cen_err:.3f} px should be far worse than {fit_err:.3f}")
-
     print("axis selftest ok: the axis holds to 0.01 px through grime and "
           "gamma 0.35-3 where the centroid walks 3.3 px; single_hump keeps "
-          "the flanks; the template fit holds to "
-          f"{fit_err:.3f} px under wandering paper where the centroid is "
-          f"{cen_err:.2f} out")
+          "the flanks")
 
 
 if __name__ == "__main__":

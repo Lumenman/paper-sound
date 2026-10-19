@@ -8,6 +8,7 @@ a printer and a flatbed do things no simulation of them predicted correctly.
     python bench.py sheet.png song.wav
     python bench.py sheet_01.png sheet_02.png song.wav
     python bench.py --same scanA.png scanB.png scanC.png song.wav
+    python bench.py --rows=3 sheet.png song.wav
 
 The last argument is the wav that was printed; everything before it is the
 scans, in playing order. It prints one line:
@@ -15,6 +16,9 @@ scans, in playing order. It prints one line:
     sheet.png   r=0.9383  lanes  57 at 6574 Hz  2 clocks  median 0.9354
                 below 0.5: 1/56  worst 0.28 0.79 0.82
                 below 0.5 at second 31
+
+`--rows=` is `read --rows`: a sheet printed at 3 or 4 rows a sample says so
+only if asked, see CLOCK_ROWS in paper_sound.py.
 
 `--same` says the scans are one sheet scanned more than once, rather than the
 pages of one recording, and adds a median line under them. It is there because
@@ -106,7 +110,8 @@ def score(song, sr, truth, hp=BASELINE, lag=8):
 
 def main(argv):
     same = "--same" in argv
-    argv = [a for a in argv if a != "--same"]
+    given = [int(a.split("=", 1)[1]) for a in argv if a.startswith("--rows=")]
+    argv = [a for a in argv if a != "--same" and not a.startswith("--rows=")]
     if len(argv) < 2:
         raise SystemExit(__doc__.strip().split("\n\n")[2])
     *scans, truth = argv
@@ -120,7 +125,8 @@ def main(argv):
         if retouched(ink):
             print(f"{path}: NOTE: levels adjusted after scanning")
         song, sr, n = read_curves_page(ink)
-        song, n, js, turned, rows = pilot_retime(song, sr, n)
+        song, n, js, turned, rows = pilot_retime(song, sr, n,
+                                                 rows=given[0] if given else None)
         sr = (sr // rows) * rows     # a thinned lane's own rate; see thin()
         if turned:
             print(f"{path}: NOTE: scanned upside down; the read was turned")

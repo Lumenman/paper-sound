@@ -125,11 +125,14 @@ PILOT_END = 20  # the last clock's cycle -- deliberately not PILOT. A sheet is
                 # reads back first is the one mark of which way up it lay.
                 # See pilot_retime().
 PILOT_AMP = 0.5 # a clock's excursion, as a fraction of the lane's full swing
-ROWS = (1, 2)   # rows per sample a sheet may carry -- see `print --rows`. The
-                # clocks are what say which: a clock's period on paper is its
-                # own rate times this, so the candidates are 20, 32, 40 and 64
-                # rows. 3 does not fit the ladder (32x3 against 20x5 is a 4%
-                # gap) and 4 leaves 30 seconds on a sheet of A4.
+ROWS = (1, 2, 3, 4)  # rows per sample a sheet may carry -- see `print --rows`
+CLOCK_ROWS = (1, 2)  # the ones the clocks are asked to tell apart unaided. A
+                # clock's period on paper is its own rate times the rows, so
+                # these are 20, 32, 40 and 64 rows. With 3 and 4 the ladder
+                # grows 60 beside 64, 6.7% apart, and a sheet printed at 96.4%
+                # -- the new laser here does that -- reads its 64 as 61.7,
+                # nearer 60: a two-row sheet would come back as three. So 3
+                # and 4 are printed and read with --rows said out loud.
 DEC_TAPS = 16   # half-length of the windowed sinc to_rate() and thin() share,
                 # in CYCLES of its own cutoff -- lowpass() turns that into
                 # samples, because a kernel is only as good as the number of
@@ -1082,12 +1085,13 @@ def despeckle(x, thresh=DESPECKLE, reach=10):
         d[i] = (d[i - 1] + d[j]) / 2 if 0 < i and j < len(d) else 0.0
     return np.concatenate(([x[0]], x[0] + np.cumsum(d)))
 
-def pilot_bin(lane, slack=PILOT_SLACK):
+def pilot_bin(lane, slack=PILOT_SLACK, rows=None):
     """The clock's bin, printed rate and rows per sample, or None if not a clock.
 
     -> (k, per, rows). `rows` is the sheet's own speed, and this is the only
     place it is measured: nothing else on a sheet says how many rows a sample
-    was given.
+    was given. Given, it is taken as said and only the clock's rate is asked,
+    which is the only way 3 and 4 are read -- see CLOCK_ROWS.
 
     Two tests, and the second one is the one that works. A tone is a single bin
     and a second of music is not -- but the trace of a curve lane is not audio,
@@ -1122,7 +1126,8 @@ def pilot_bin(lane, slack=PILOT_SLACK):
     k = int(np.argmax(P[1:])) + 1
     if not PILOT:
         return None
-    per, rows = min(((p, m) for p in (PILOT, PILOT_END) for m in ROWS),
+    per, rows = min(((p, m) for p in (PILOT, PILOT_END)
+                     for m in ((rows,) if rows else CLOCK_ROWS)),
                     key=lambda c: abs(np.log(n / (k * c[0] * c[1]))))
     if not 1 / slack <= n / (k * per * rows) <= slack:
         return None
@@ -1130,7 +1135,7 @@ def pilot_bin(lane, slack=PILOT_SLACK):
             else None)
 
 
-def pilot_timebase(lane, periods=1):
+def pilot_timebase(lane, periods=1, rows=None):
     """Timing error per sample, in samples, from a lane carrying one tone.
 
     -> (the error, the clock's printed rate, the sheet's rows per sample),
@@ -1170,7 +1175,7 @@ def pilot_timebase(lane, periods=1):
     half the amplitude. One period nulls the image just as exactly and takes 3%
     off instead.
     """
-    got = pilot_bin(lane)
+    got = pilot_bin(lane, rows=rows)
     if got is None:
         return None                      # no single tone: this is audio
     k, per, rows = got
@@ -1322,7 +1327,8 @@ def pilot_retime(song, sr, n, pilot=True, rows=None):
         return thin(song, sr, rows or 1), n, [], False, rows or 1
     def ends(song):
         last = len(song) // sr - 1
-        got = [(k, pilot_timebase(song[k * sr:(k + 1) * sr])) for k in (0, last)]
+        got = [(k, pilot_timebase(song[k * sr:(k + 1) * sr], rows=rows))
+               for k in (0, last)]
         return [(k == last, *g) for k, g in got if g is not None]
     got = ends(song)
     rates = [None, None]
@@ -1382,7 +1388,8 @@ def pilot_retime(song, sr, n, pilot=True, rows=None):
     if rows is None and measured == 1 and max(said) > 1:
         print(f"a clock says {max(said)} rows to the sample and that takes two "
               f"agreeing; read as 1, which is the mistake that undoes itself. "
-              f"If the sheet is that, say --rows {max(said)}")
+              f"If the sheet is that, say --rows {max(said)}; one printed "
+              f"with --rows 3 or 4 reads like this too, and needs it said")
     rows = measured if rows is None else rows
     return thin(song, sr, rows), n - len(js), js, turned, rows
 
@@ -1457,7 +1464,8 @@ def do_read(args):
                 edge = 6
                 look = (*range(min(edge, n0)), *range(max(edge, n0 - edge), n0))
                 at = [k for k in look
-                      if pilot_bin(raw[k * sr:(k + 1) * sr]) is not None]
+                      if pilot_bin(raw[k * sr:(k + 1) * sr],
+                                   rows=args.rows) is not None]
                 if len(at) > 1:
                     print(f"{path}: clocks on lanes {at[0]} and {at[-1]} of "
                           f"{n0} -- the lane grid overran "
@@ -1763,6 +1771,31 @@ def selftest():
     r3 = np.corrcoef(highpass(got3, 31), highpass(sig[:len(got3)], 31))[0, 1]
     assert r3 > 0.95, f"turned two-row round trip {r3:.4f}"
 
+    # Three rows: the clocks are not asked unaided (CLOCK_ROWS), so the flag
+    # reads it and its absence says which flag. 60 rows of the end clock sit
+    # 6.7% from the 64 of a two-row start clock -- read unaided, the sheet
+    # comes back a lane short and at the wrong speed.
+    with tempfile.TemporaryDirectory() as tmp:
+        wav, png = os.path.join(tmp, "in.wav"), os.path.join(tmp, "r3.png")
+        write_wav(wav, sig[:3 * rate], rate)
+        args = argparse.Namespace(audio=wav, out=png, paper="38.1x38.1", dpi=600,
+                                  margin_mm=6.35, pitch=PITCH, start=0.0,
+                                  pilot=True, rows=3)
+        with contextlib.redirect_stdout(_io.StringIO()):
+            do_print(args)
+        thick, thick_rate, n3 = read_curves_page(load_ink(png))
+    said = _io.StringIO()
+    with contextlib.redirect_stdout(said):
+        unaided = pilot_retime(thick, thick_rate, n3)[4]
+    assert unaided != 3 and "--rows 3" in said.getvalue(), (
+        f"a three-row sheet read unaided as {unaided} and said "
+        f"{said.getvalue().strip()!r}")
+    got4, _, js5, turned5, rows5 = pilot_retime(thick, thick_rate, n3, rows=3)
+    assert (rows5, len(js5), turned5) == (3, 2, False), (
+        f"--rows 3 read {rows5} rows, {len(js5)} clocks, turned={turned5}")
+    r4 = np.corrcoef(highpass(got4, 31), highpass(sig[:len(got4)], 31))[0, 1]
+    assert r4 > 0.95, f"three rows a sample round trip {r4:.4f}"
+
     # Two clocks at the same rate: the sheet is symmetric after all, the reader
     # cannot know, and the one thing it must not do is decide in silence.
     same = got.copy()
@@ -2055,7 +2088,8 @@ def selftest():
     assert np.array_equal(despeckle(dirty, 0), dirty), "despeckle ran when off"
 
     print(f"selftest ok: {n} lanes at {out_rate} Hz, round trip {r:.4f}, "
-          f"clock {before:.3f} -> {after:.3f}, two rows a sample {r2:.4f}")
+          f"clock {before:.3f} -> {after:.3f}, two rows a sample {r2:.4f}, "
+          f"three {r4:.4f}")
 
 
 # ------------------------------------------------------------------------ main
@@ -2082,8 +2116,9 @@ def main():
         q.add_argument("--rows", type=int, default=1, choices=ROWS,
                        help="printed rows per audio sample (default: 1). 2 "
                             "halves the ink's slope per row and the seconds a "
-                            "sheet holds; the clocks carry it, so `read` needs "
-                            "no flag")
+                            "sheet holds; the clocks carry 1 and 2, so `read` "
+                            "needs no flag for them. 3 and 4 are read with "
+                            "the same --rows given again")
         return q
 
     pr = sheet_args(sub.add_parser("print", help="audio -> a sheet to print"))
@@ -2108,8 +2143,9 @@ def main():
                          "without clocks, or before the clocks differed")
     rd.add_argument("--rows", type=int, choices=ROWS,
                     help="rows per audio sample, when the clocks cannot say "
-                         "(default: measured off them). A sheet printed with "
-                         "--rows 2 whose clocks are damaged needs this: "
+                         "(default: measured off them, 1 or 2). A sheet "
+                         "printed with --rows 3 or 4 always needs this, and "
+                         "one with --rows 2 whose clocks are damaged does too: "
                          "nothing else on it carries the number")
     rd.add_argument("--sr", type=int, help="samples per lane (default: measured)")
     rd.add_argument("--aperture", type=float, default=None,

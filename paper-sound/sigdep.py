@@ -16,12 +16,30 @@ the treble lies under the paper's noise, which is what the inverse filter
 found too. So a calibration file for the reader is not worth building.
 
 `--kind=lin` or `--kind=non` restricts the features, to tell the two apart.
+
+Last, a Wiener filter: the spectra of signal and paper noise of the fit scans,
+and the read turned down wherever the paper is the louder. It is the noise
+print a known tone or a blank stretch of paper would give. Measured (LAB 29.5):
++0.04 to +0.16 dB, because above 1600 Hz the read and the paper are equally
+loud and turning one down turns down the other.
 """
 import sys
 
 import numpy as np
+from scipy.signal import welch
 
 from diversity import db, err, pair
+
+
+def wiener(pairs, sr, nper=512):
+    S = sum(welch(a - err(a, b), sr, nperseg=nper)[1] for a, b in pairs)
+    f, N = welch(np.concatenate([err(a, b) for a, b in pairs]), sr, nperseg=nper)
+    N = N * len(pairs)
+    return f, S / (S + N)
+
+
+def filtered(a, f, H, sr):
+    return np.fft.irfft(np.fft.rfft(a) * np.interp(np.fft.rfftfreq(len(a), 1 / sr), f, H), len(a))
 
 
 def feats(x, kind="all", taps=4):
@@ -49,6 +67,7 @@ def main(argv):
     cut = argv.index("--")
     *rest, truth = argv[cut + 1:]
     fits, tests = argv[:cut], rest
+    sr = pair(fits[0], truth)[2]
     P = {s: pair(s, truth)[:2] for s in fits + tests}
     for src, name in ((1, "the wav"), (0, "the read")):
         w = fit([P[s] for s in fits], src, kind)
@@ -58,6 +77,12 @@ def main(argv):
             before = db(np.corrcoef(a, b)[0, 1])
             after = db(np.corrcoef(a - feats(P[s][src], kind) @ w, b)[0, 1])
             print(f"  {s:28s} {before:6.2f} -> {after:6.2f} dB  ({after - before:+.2f})")
+    f, H = wiener([P[s] for s in fits], sr)
+    print("Wiener filter from the fit scans' spectra")
+    for s in tests:
+        a, b = P[s]
+        before, after = db(np.corrcoef(a, b)[0, 1]), db(np.corrcoef(filtered(a, f, H, sr), b)[0, 1])
+        print(f"  {s:28s} {before:6.2f} -> {after:6.2f} dB  ({after - before:+.2f})")
 
 
 if __name__ == "__main__":

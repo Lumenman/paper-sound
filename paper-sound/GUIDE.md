@@ -219,7 +219,9 @@ dialog that fits the sheet into the printer's printable area shrinks it by
 2–5% (the laser here printed 95.2% = 200/210), and the 600 dpi grid is
 resampled strokes and all. In IrfanView: "Original size", centred on both axes,
 margins 0; without centring the sheet starts at the printable area's corner and
-the edge of the block is cut off. Check with a ruler: on A4 the block is
+the edge of the block is cut off. Or PDF: `topdf.bat sheet.png` (needs
+`pip install img2pdf`) puts the same raster, not recompressed, on an A4 page
+with the 600 dpi fixed; print it at "Actual size", not "Fit". Check with a ruler: on A4 the block is
 199 × 287 mm. If a sheet comes out faint,
 print it again darker, **do not fix it afterwards**: what did not land on the
 paper, the reader cannot restore.

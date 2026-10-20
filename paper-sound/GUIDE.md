@@ -189,7 +189,7 @@ python paper-sound/paper_sound.py print song.wav --rows 2
 | `--dpi` | `600` | print resolution; the PNG carries it |
 | `--margin-mm` | `5` | margins the printer cannot reach |
 | `--pitch` | `38.7` | lane pitch in px. Wider is cleaner, but fewer seconds a sheet |
-| `--rows` | `1` | rows per sample; `2` gives +2.1 dB at the cost of half the time |
+| `--rows` | `1` | rows per sample, 1–4; speech `2`, music `3` (see below) |
 | `--start` | `0` | how many seconds to skip before the first sheet |
 
 `holds` takes the same five geometry options: the same calculation without a
@@ -214,7 +214,13 @@ song.wav: 120 s at 6780 Hz, 122 lanes -> 1 sheet
 ```
 
 **Print at 100%, actual size, no "fit to page".** The PNG carries its own dpi,
-and a sane print dialog does the rest by itself. If a sheet comes out faint,
+and a sane print dialog does the rest by itself. Not all are sane: a
+dialog that fits the sheet into the printer's printable area shrinks it by
+2–5% (the laser here printed 95.2% = 200/210), and the 600 dpi grid is
+resampled strokes and all. In IrfanView: "Original size", centred on both axes,
+margins 0; without centring the sheet starts at the printable area's corner and
+the edge of the block is cut off. Check with a ruler: on A4 the block is
+199 × 287 mm. If a sheet comes out faint,
 print it again darker, **do not fix it afterwards**: what did not land on the
 paper, the reader cannot restore.
 
@@ -228,10 +234,33 @@ NOTE: 0.085 mm of stroke, against the 0.17 mm this format has been printed and
 scanned at. STROKE 8 and --pitch 77 would keep the sheet the size it is at 600 dpi
 ```
 
-**About `--rows 2`.** Each sample is drawn over two rows: the ink's slope per
-row is halved, the sheet holds half as much sound, and the read comes out
-2.1 dB cleaner (the median of four scans of one sheet against a control). Nothing needs encoding: the clocks carry the number themselves,
-and `read` asks for no flag. Fractional values (1.5) are impossible, see §12.
+**About `--rows`.** Each sample is drawn over N rows: the ink's slope per row
+is N times smaller, and the sheet holds N times less sound. Measured on two
+printers and three recordings (`LAB.ru.md`, §28), dB over `--rows 1`:
+
+```
+              voice          harpsichord    an A4 holds
+--rows 2      +2.7…+5.2      +4.8…+7.1      60 s
+--rows 3      +2.8…+5.8      +6.6…+9.6      40 s
+--rows 4      +2.5…+6.5      +6.9…+8.4      30 s
+```
+
+The top of each range is the laser printed at 95.2%: its `--rows 1` is pulled
+down by the shrink (see above), so the honest gain is nearer the bottom.
+
+**Speech: `--rows 2`.** A third row gives voice +0.1…0.6 dB, less than the
+spread between scans, and costs 20 s of the sheet. **Music with treble:
+`--rows 3`**, which gives the harpsichord another +2 dB. `--rows 4` gives
+nothing beyond the spread.
+
+The clocks carry 1 and 2 themselves, and `read` asks for no flag for them.
+**3 and 4 are read only with the same `--rows`**: a clock's period in rows on a
+sheet at 3 (60) is 6.7% from one at 2 (64), and printers shrink a sheet by
+2–5%, so a reader guessing on its own would read sheets at 2 as sheets at 3.
+The reader does not name a forgotten flag outright: a sheet at 3 reads with
+"a clock says 2 rows", one at 4 with "no clock lanes found", and both come
+out as `--rows 1`, three and four times as long (§7, §13). Fractional values (1.5) are
+impossible, see §12.
 
 ---
 
@@ -285,7 +314,7 @@ scale is brought to the first one's rate.
 |---|---|
 | `--aperture` | the main read knob: the width of the centroid window in px. Turn it first if r is low (§9) |
 | `--pitch` | if segmentation missed the pitch |
-| `--rows` | if the clocks are damaged: nothing else on the sheet carries this number |
+| `--rows` | always for a sheet printed with `--rows 3` or `4`; for `2` if the clocks are damaged: nothing else on the sheet carries this number |
 | `--upside-down` | if the sheet was printed before the clocks became different and plays backwards |
 | `--sr` | set the number of samples per lane by hand |
 | `--no-pilot` | read without the clocks (and without retiming) |
@@ -305,7 +334,8 @@ the work, the read carries on, but each one means something.
 | `both clocks are the 32-sample one` | an old sheet: identical clocks, nothing to tell orientation by | if it plays backwards, `--upside-down` |
 | `only one clock` | the second lane is damaged, or the grid overran the field | orientation not confirmed, check by ear |
 | `clocks on lanes 4 and 57 of 62 -- the lane grid overran the field` | segmentation caught the edge of the glass | the extra seconds are empty; crop the scan to the paper |
-| `no clock lanes found` | printed without clocks, or the grid badly missed | no retiming; `--rows` if the sheet was at 2 |
+| `no clock lanes found` | printed without clocks, the grid badly missed, or a sheet at 4 | no retiming; `--rows` if the sheet was at 2, 3 or 4 |
+| `a clock says 2 rows to the sample and that takes two agreeing` | one clock of two was recognised; a sheet at 3 reads like this too | a sheet at 2: `--rows 2`; at 3: `--rows 3` |
 | `2 clock lanes found, carriage ripple 1.47 samples rms` | normal: 0.08 on a render, about 1.5 on paper | nothing |
 | `lane 3 of 40 is 8 px against a median of 38` | something on the sheet was segmented as a lane | **important**: everything after it is shifted by a second |
 | `the drift fitted down this page says ... the ink's own edges say ...` | the drift fit left the sheet, skew read low | rescan it straighter |
@@ -568,6 +598,7 @@ first.
 | dull sound and hiss | levels tweaked or a white point set while scanning | rescan with no adjustments |
 | a thin pure tone over the recording | periodicity of the glass | `spec.py`, then `sox equalizer` (§10) |
 | a click once a second | a lane joint; smoothed by itself when read in one command | read all sheets in one call |
+| the recording is three or four times as long and lower | a sheet at 3 or 4 read without `--rows` | `read --rows 3` / `--rows 4` |
 | the recording is twice as long and lower | strips played row-per-sample without accounting for `--rows 2` | give the row rate (§11) |
 | pale, ragged strokes on the paper | the printer: stroke too thin or too little ink | print darker; larger `--pitch` / `--dpi` per the numbers in the NOTE |
 | "the fit has left the sheet ... Rescan it straighter" | the drift fit left the sheet | lay the sheet straighter and rescan |

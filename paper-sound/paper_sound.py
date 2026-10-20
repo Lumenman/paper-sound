@@ -1331,6 +1331,21 @@ def pilot_retime(song, sr, n, pilot=True, rows=None):
                for k in (0, last)]
         return [(k == last, *g) for k, g in got if g is not None]
     got = ends(song)
+    # 3 and 4 are never asked of the clocks unaided, so their sheets come back
+    # with one clock or none and a hint about 2. Asked outright, both ends of
+    # such a sheet answer, and a two-row sheet's do not: its 40-row clock is
+    # 1.5 from either rung at 3, so it is never mistaken for one.
+    hint = None
+    if rows is None and len(got) < 2:
+        last = len(song) // sr - 1
+        hint = next((m for m in ROWS if m not in CLOCK_ROWS and all(
+            pilot_bin(song[k * sr:(k + 1) * sr], rows=m) for k in (0, last))),
+            None)
+    if hint:
+        print(f"both clocks read as a sheet printed with --rows {hint}, which "
+              f"the clocks are not asked to tell unaided: read it again with "
+              f"--rows {hint}. Without it the read is {hint} times too long, "
+              f"and the warnings about its clocks are this")
     rates = [None, None]
     for last, _, per, _ in got:
         rates[bool(last)] = per
@@ -1385,7 +1400,7 @@ def pilot_retime(song, sr, n, pilot=True, rows=None):
     # buys the cheap mistake rather than the dear one and says so.
     said = [m for *_, m in got]
     measured = said[0] if len(said) == 2 and said[0] == said[1] else 1
-    if rows is None and measured == 1 and max(said) > 1:
+    if rows is None and measured == 1 and max(said) > 1 and not hint:
         print(f"a clock says {max(said)} rows to the sample and that takes two "
               f"agreeing; read as 1, which is the mistake that undoes itself. "
               f"If the sheet is that, say --rows {max(said)}; one printed "
@@ -1787,7 +1802,7 @@ def selftest():
     said = _io.StringIO()
     with contextlib.redirect_stdout(said):
         unaided = pilot_retime(thick, thick_rate, n3)[4]
-    assert unaided != 3 and "--rows 3" in said.getvalue(), (
+    assert unaided != 3 and "again with --rows 3" in said.getvalue()         and "--rows 2" not in said.getvalue(), (
         f"a three-row sheet read unaided as {unaided} and said "
         f"{said.getvalue().strip()!r}")
     got4, _, js5, turned5, rows5 = pilot_retime(thick, thick_rate, n3, rows=3)

@@ -257,9 +257,9 @@ The clocks carry 1 and 2 themselves, and `read` asks for no flag for them.
 **3 and 4 are read only with the same `--rows`**: a clock's period in rows on a
 sheet at 3 (60) is 6.7% from one at 2 (64), and printers shrink a sheet by
 2–5%, so a reader guessing on its own would read sheets at 2 as sheets at 3.
-The reader does not name a forgotten flag outright: a sheet at 3 reads with
-"a clock says 2 rows", one at 4 with "no clock lanes found", and both come
-out as `--rows 1`, three and four times as long (§7, §13). Fractional values (1.5) are
+The reader names a forgotten flag ("both clocks read as a sheet
+printed with --rows 3...", §7) but reads the sheet as `--rows 1`, three or
+four times as long: read it again with the flag it named. Fractional values (1.5) are
 impossible, see §12.
 
 ---
@@ -334,8 +334,9 @@ the work, the read carries on, but each one means something.
 | `both clocks are the 32-sample one` | an old sheet: identical clocks, nothing to tell orientation by | if it plays backwards, `--upside-down` |
 | `only one clock` | the second lane is damaged, or the grid overran the field | orientation not confirmed, check by ear |
 | `clocks on lanes 4 and 57 of 62 -- the lane grid overran the field` | segmentation caught the edge of the glass | the extra seconds are empty; crop the scan to the paper |
-| `no clock lanes found` | printed without clocks, the grid badly missed, or a sheet at 4 | no retiming; `--rows` if the sheet was at 2, 3 or 4 |
-| `a clock says 2 rows to the sample and that takes two agreeing` | one clock of two was recognised; a sheet at 3 reads like this too | a sheet at 2: `--rows 2`; at 3: `--rows 3` |
+| `no clock lanes found` | printed without clocks, or the grid badly missed | no retiming; `--rows` if the sheet was at 2, 3 or 4 |
+| `both clocks read as a sheet printed with --rows 3` | a sheet at 3 or 4 read without `--rows`; the clock warnings below are this | read again with the `--rows` it named |
+| `a clock says 2 rows to the sample and that takes two agreeing` | one clock of two was recognised | if the sheet is at 2, `--rows 2` |
 | `2 clock lanes found, carriage ripple 1.47 samples rms` | normal: 0.08 on a render, about 1.5 on paper | nothing |
 | `lane 3 of 40 is 8 px against a median of 38` | something on the sheet was segmented as a lane | **important**: everything after it is shifted by a second |
 | `the drift fitted down this page says ... the ink's own edges say ...` | the drift fit left the sheet, skew read low | rescan it straighter |
@@ -598,7 +599,7 @@ first.
 | dull sound and hiss | levels tweaked or a white point set while scanning | rescan with no adjustments |
 | a thin pure tone over the recording | periodicity of the glass | `spec.py`, then `sox equalizer` (§10) |
 | a click once a second | a lane joint; smoothed by itself when read in one command | read all sheets in one call |
-| the recording is three or four times as long and lower | a sheet at 3 or 4 read without `--rows` | `read --rows 3` / `--rows 4` |
+| the recording is three or four times as long and lower | a sheet at 3 or 4 read without `--rows` | the `--rows` the reader named (§7) |
 | the recording is twice as long and lower | strips played row-per-sample without accounting for `--rows 2` | give the row rate (§11) |
 | pale, ragged strokes on the paper | the printer: stroke too thin or too little ink | print darker; larger `--pitch` / `--dpi` per the numbers in the NOTE |
 | "the fit has left the sheet ... Rescan it straighter" | the drift fit left the sheet | lay the sheet straighter and rescan |

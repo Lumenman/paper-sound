@@ -401,6 +401,8 @@ spread between scans of one sheet reached 1.95 dB here.
 | `python paper-sound/spec.py back.wav:song.wav:label` | **what extra** showed up in the spectrum: scanner whine, printer screen (§10) |
 | `python paper-sound/slope.py back.wav:song.wav:38.7` | whether the sheet loses **on steepness**: the error against the slope the ink had to draw. Losses only in the top bins = steepness is to blame, flat across all = the paper |
 | `python paper-sound/cmp_picky.py 6608 song.wav "reader" back.wav "picky" other.wav` | compare two different reads of one sheet on one metric |
+| `python paper-sound/diversity.py scanA.png scanB.png scanC.png song.wav` | what averaging **several scans** of one sheet would buy, and how much error the lanes of one row share |
+| `python paper-sound/sigdep.py fitA.png -- testB.png song.wav` | how much of the error is **predictable** from the stroke's shape, and how much of that a reader could take out |
 
 ### Self-tests
 
@@ -429,12 +431,14 @@ where the pair does show.
 2. **Stroke geometry at print time**: 0.17 mm at 600 dpi. A different dpi or a
    coarse printer screen changes things; printing issues a NOTE and names the
    numbers (§4).
-3. **An inverse filter (optional).** The print+scan chain acts as a gentle
-   low-pass, and part of its loss could be removed by a fixed filter. Measured:
-   on three different sheets from one pair, the error repeats at ρ ≈ 0.33…0.56,
-   and compensation would give +0.8…+2.1 dB. The program does not have it: such
-   a filter would be the first thing tied to specific hardware, and it should
-   live in a calibration file, not a constant.
+3. **An inverse filter: not worth it.** The print+scan chain acts as a gentle
+   low-pass, and the error it leaves does repeat from sheet to sheet: predicted
+   from the wav that was printed, it is worth +2-3 dB, and it carries from one
+   sheet to another. But the reader does not have the wav. Predicted from the
+   read itself, the same correction gives +0.1…+0.8 dB, and below zero when it
+   was fitted on another sheet: the treble lies under the paper's noise, and
+   lifting one lifts the other (`sigdep.py`, LAB §29.3). Treble can only be
+   bought at print time, which is what `prep.bat` does, and `--rows 2`.
 
 **Checklist for the first sheet from a new pair:**
 
@@ -574,7 +578,8 @@ and orientation is lost silently.
 
 **Can I print an "error map" as a second set of curves, to read more
 accurately?** Measured: the error repeats between scans of one sheet at
-ρ ≈ 0.6, and a perfect map would give +1.4 dB of median for half the sheet.
+ρ ≈ 0.6…0.77, and a perfect map would give +1.4 dB of median for half the sheet.
+Averaging four scans of the sheet gets to +1.0 dB of that (`diversity.py`).
 Exactly the same half sheet buys `--rows 2`, which gives +2.1 dB and needs
 neither a second pass nor a tie to the scanner.
 

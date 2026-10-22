@@ -294,9 +294,11 @@ But spotting is not fixing. The only answer is to rescan.
 Lay the sheet against the guide. Skew is cheap now (the grid is cut along the
 sheet's own lean), but the sheet still has to fit on the glass entirely.
 
-**Three scans instead of one.** Two scans of the same sheet, with the same
-settings, minutes apart, differed here by **1.95 dB**. Anything smaller than
-that is a conversation about the scanner, not about the format. So when you
+**Three scans instead of one.** Scans of the same sheet, with the same
+settings, minutes apart, spread here by **0.5-0.7 dB** (up to 1.7 on an old
+sheet; before the scorer aligned to a fraction of a sample, LAB 29.10, it
+looked like 2 dB and more). Anything smaller than that is a conversation about
+the scanner, not about the format. So when you
 measure something seriously, scan the sheet three times, lifting it and laying
 it down again between scans, and compare medians (`bench.py --same`, §8).
 
@@ -390,7 +392,7 @@ start.
 
 **`--same`** says this is one sheet scanned several times, and adds the median
 and the spread. Use it before you believe some change improved anything: the
-spread between scans of one sheet reached 1.95 dB here.
+spread between scans of one sheet is 0.5-0.7 dB here, up to 1.7.
 
 ### The other instruments
 
@@ -578,10 +580,11 @@ and orientation is lost silently.
 
 **Can I print an "error map" as a second set of curves, to read more
 accurately?** Measured: the error repeats between scans of one sheet at
-ρ ≈ 0.6…0.77, and a perfect map would give +1.4 dB of median for half the sheet.
-Averaging four scans of the sheet gets to +1.0 dB of that (`diversity.py`).
-Exactly the same half sheet buys `--rows 2`, which gives +2.1 dB and needs
-neither a second pass nor a tie to the scanner.
+ρ ≈ 0.70…0.85, and a perfect map would give about +1.1 dB of median for half
+the sheet. Averaging four scans of the sheet gets to +0.7 dB of that
+(`diversity.py`). Exactly the same half sheet buys `--rows 2`, which gives
++3 to +4 dB on the voice and needs neither a second pass nor a tie to the
+scanner.
 
 **Why does the read sound quieter or louder than the original?** It is
 normalised by the 99.9th percentile, not by the peak: otherwise one lost lane,

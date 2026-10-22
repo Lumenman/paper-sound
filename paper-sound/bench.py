@@ -46,7 +46,10 @@ or two late against the file uniformly; that is not a defect of the read, and
 on broadband audio it is worth 0.15 of correlation. Late means the READ is
 advanced, not the reference -- searching one way only is what this file used to
 do, against its own paragraph here, and it cost sheetB 4.8 dB and sheetC 10.4,
-which then read as a difference between the two formats and was not one. Per-lane offsets are NOT taken out: those are
+which then read as a difference between the two formats and was not one. The
+lag is then refined to 1/32 of a sample: half a sample left in cost up to 2.4
+dB at rows 1 and most of the spread between scans (LAB 29.9), and a constant
+delay that small is not heard. Per-lane offsets are NOT taken out: those are
 real, and taking them out is what the clock lanes do.
 
 The lane distribution matters more than the total. A reader that loses two
@@ -70,9 +73,9 @@ import sys
 
 import numpy as np
 
-from paper_sound import (BASELINE, DECLICK, declick, highpass, load_ink,
-                         pilot_retime, read_curves_page, read_wav, retouched,
-                         to_rate)
+from paper_sound import (BASELINE, DECLICK, align, declick, highpass,
+                         load_ink, pilot_retime, read_curves_page, read_wav,
+                         retouched, to_rate)
 
 
 def runs(ns, cap=16):
@@ -89,23 +92,16 @@ def score(song, sr, truth, hp=BASELINE, lag=8):
     """(overall r, per-lane r) against the printed audio, at the read's rate."""
     ref, rate = read_wav(truth)
     ref = to_rate(ref, rate, sr)
-    n = min(len(song), len(ref)) - 2 * lag
-    if n < sr:
+    if min(len(song), len(ref)) - 2 * lag < sr:
         raise SystemExit("the read and the reference barely overlap")
-    a, b = highpass(song, hp), highpass(ref, hp)
-    # Both ways round. Print and scan fade the ink's first row into the paper,
-    # so the read sits a sample or two LATE -- and taking that out means
-    # advancing the READ, not the reference. Searching one way only left +1
-    # sample in sheetB's answer and +2 in sheetC's, worth 4.8 and 10.4 dB of
-    # what was being read as paper. The digital sheets peak at 0 either way,
-    # which is what says the search is finding the fade and not fitting noise.
-    rs = [np.corrcoef(a[lag + d:lag + d + n], b[lag:lag + n])[0, 1]
-          for d in range(-lag, lag + 1)]
-    a = a[lag + int(np.argmax(rs)) - lag:][:n]
-    b = b[lag:lag + n]
+    # Both ways and to a fraction of a sample, see align(). The digital sheets
+    # peak at 0 either way, which is what says the search is finding the fade
+    # and not fitting noise.
+    r, a, b = align(highpass(song, hp), highpass(ref, hp), lag)
+    n = len(b)
     lanes = np.array([np.corrcoef(a[i:i + sr], b[i:i + sr])[0, 1]
                       for i in range(0, n - sr + 1, sr)])
-    return max(rs), lanes
+    return r, lanes
 
 
 def main(argv):

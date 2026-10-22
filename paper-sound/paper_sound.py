@@ -781,6 +781,37 @@ def to_rate(signal, sr, rate):
                      np.arange(len(signal)), signal)
 
 
+def align(a, b, lag=8, steps=32):
+    """-> (r, a, b): the read `a` slid onto the reference `b`, both cut to n.
+
+    Whole samples first, searched both ways: print and scan fade the ink's
+    first row into the paper, so a read sits a sample or two LATE, and that is
+    taken out by advancing the read, not the reference. One-sided, it cost
+    sheetB 4.8 dB and sheetC 10.4 of what was being read as paper.
+
+    Then a fraction of a sample, on a grid of 1/steps: a read lands up to half
+    a sample off its wav, a constant 70 us nobody hears, and at rows 1 that
+    half sample cost up to 2.4 dB of r and most of the spread between scans of
+    one sheet (LAB 29.9). The shift is exact (a phase ramp across the FFT);
+    its wrap-around lands in the `lag` margin that is cut off anyway.
+    """
+    n = min(len(a), len(b)) - 2 * lag
+    b = b[lag:lag + n]
+    rs = [np.corrcoef(a[lag + d:lag + d + n], b)[0, 1]
+          for d in range(-lag, lag + 1)]
+    d = int(np.argmax(rs)) - lag
+    spec, f = np.fft.rfft(a), np.fft.rfftfreq(len(a))
+    best, out = max(rs), a[lag + d:lag + d + n]
+    for frac in np.arange(-steps // 2, steps // 2 + 1) / steps:
+        if frac:
+            x = np.fft.irfft(spec * np.exp(2j * np.pi * f * (d + frac)),
+                             len(a))[lag:lag + n]
+            r = np.corrcoef(x, b)[0, 1]
+            if r > best:
+                best, out = r, x
+    return best, out, b
+
+
 def paper_mm(paper):
     """Sheet size in mm, by name or as WxH."""
     if paper in PAPER:
@@ -1553,6 +1584,15 @@ def selftest():
     high = to_rate(np.sin(2 * np.pi * 2000 * t), 4800, 600)
     assert np.abs(high).max() < 0.3, (
         f"2 kHz folded into a 600 Hz sheet at {np.abs(high).max():.2f}")
+
+    # The scorer's lag, whole and fractional and either way round: a read late
+    # by 2.44 samples must score as the read it is, not as half a sample of
+    # noise on top of it.
+    spec, f = np.fft.rfft(sig), np.fft.rfftfreq(len(sig))
+    for late in (2.44, -1.5):
+        r, _, _ = align(np.fft.irfft(spec * np.exp(-2j * np.pi * f * late),
+                                     len(sig)), sig)
+        assert r > 0.999, f"a read {late} samples late aligned at r={r:.4f}"
 
     # And a clip SHORTER than the kernel that filters it, which is the one
     # length numpy's "same" does not mean: it returns max(len(x), len(h)), so

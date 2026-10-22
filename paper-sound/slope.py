@@ -13,7 +13,7 @@ import sys
 
 import numpy as np
 
-from paper_sound import BASELINE, MARGIN, STROKE, highpass, read_wav, to_rate
+from paper_sound import BASELINE, MARGIN, STROKE, align, highpass, read_wav, to_rate
 
 
 def swing(pitch):
@@ -25,13 +25,8 @@ def report(got, truth, pitch, lag=64):
     x, sr = read_wav(got)
     y, rate = read_wav(truth)
     ref = to_rate(y, rate, sr)
-    n = min(len(x), len(ref)) - 2 * lag
-    a, b = highpass(x, BASELINE), highpass(ref, BASELINE)
-    # Both ways: a paper read sits a sample or two late, and that is taken out
-    # by advancing the read. One-sided it reads as noise -- see bench.score.
-    d = int(np.argmax([np.corrcoef(a[lag + k:lag + k + n], b[lag:lag + n])[0, 1]
-                       for k in range(-lag, lag + 1)])) - lag
-    a, ref = a[lag + d:lag + d + n], b[lag:lag + n]
+    # Both ways and to a fraction of a sample, see paper_sound.align().
+    _, a, ref = align(highpass(x, BASELINE), highpass(ref, BASELINE), lag)
     a = a * (ref @ a) / (a @ a)               # r is scale-free; the error is not
     err = a - ref
     px = np.abs(np.gradient(ref)) / (2 * np.abs(ref).max()) * swing(pitch)

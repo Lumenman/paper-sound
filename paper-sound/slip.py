@@ -82,7 +82,7 @@ import argparse
 import numpy as np
 
 from paper_sound import (BASELINE, DPI, MARGIN_MM, PAPER_DEFAULT, PITCH,
-                         full_scale, highpass, lay_out as stroke_lay_out,
+                         align, full_scale, highpass, lay_out as stroke_lay_out,
                          mm_px, paper_mm, read_curves_page, read_wav,
                          render_page, sheet_px, to_rate, trim_paper)
 from grating import refine
@@ -402,11 +402,9 @@ def slips(trace, truth, lam):
 
 def db(a, b, lag=8):
     """The project's own metric between a read and its source."""
-    n = min(len(a), len(b)) - 2 * lag
-    a, b = highpass(np.asarray(a, float), BASELINE), highpass(np.asarray(b, float), BASELINE)
-    rs = [np.corrcoef(a[lag + d:lag + d + n], b[lag:lag + n])[0, 1]
-          for d in range(-lag, lag + 1)]
-    r = float(np.clip(max(rs), -0.999999, 0.999999))
+    r, _, _ = align(highpass(np.asarray(a, float), BASELINE),
+                    highpass(np.asarray(b, float), BASELINE), lag)
+    r = float(np.clip(r, -0.999999, 0.999999))
     return 10 * np.log10(r * r / (1 - r * r)), r
 
 

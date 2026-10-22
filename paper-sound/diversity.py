@@ -24,8 +24,9 @@ import sys
 
 import numpy as np
 
-from paper_sound import (BASELINE, DECLICK, declick, highpass, load_ink,
-                         pilot_retime, read_curves_page, read_wav, to_rate)
+from paper_sound import (BASELINE, DECLICK, align, declick, highpass,
+                         load_ink, pilot_retime, read_curves_page, read_wav,
+                         to_rate)
 
 
 def db(r):
@@ -41,11 +42,7 @@ def pair(scan, truth, lag=8):
     song = declick(highpass(song, BASELINE), joins, DECLICK)
     ref, rate = read_wav(truth)
     song, ref = to_rate(song, sr, rate), highpass(ref, BASELINE)
-    n = min(len(song), len(ref)) - 2 * lag
-    b = ref[lag:lag + n]
-    rs = [np.corrcoef(song[lag + d:lag + d + n], b)[0, 1]
-          for d in range(-lag, lag + 1)]
-    a = song[int(np.argmax(rs)):][:n]
+    _, a, b = align(song, ref, lag)
     z = lambda x: (x - x.mean()) / x.std()
     return z(a), z(b), rate
 

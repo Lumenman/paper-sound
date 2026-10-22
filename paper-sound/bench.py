@@ -22,12 +22,14 @@ only if asked, see CLOCK_ROWS in paper_sound.py.
 
 `--same` says the scans are one sheet scanned more than once, rather than the
 pages of one recording, and adds a median line under them. It is there because
-one scan does not measure a sheet: two scans of sheetD, same settings, minutes
-apart, came back 1.95 dB apart, and the better of the two was the one whose
-carriage rippled worse. Anything smaller than that gap is the scanner talking,
-not the sheet -- so a difference worth reporting is a difference between
-medians of three, and the spread printed beside the median says whether the
-number is even worth having.
+one scan does not measure a sheet: four scans of sheetD, same settings, spread
+over 1.68 dB, and the better of two taken minutes apart was the one whose
+carriage rippled worse. Under the old whole-sample lag that spread looked like
+1.5-2 dB and more, much of it the count rather than the scan (LAB 29.10); on
+the sheets since it is 0.5-0.7. Anything smaller than the spread is the
+scanner talking, not the sheet -- so a difference worth reporting is a
+difference between medians of three, and the spread printed beside the median
+says whether the number is even worth having.
 
 Scan the three with the sheet lifted and laid down again between them. Left on
 the glass it is the same placement three times, and placement is half of what

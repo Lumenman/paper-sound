@@ -9,14 +9,17 @@ antennas are the scans of one sheet (add) and the lanes of one row (subtract a
 reference stroke's view of the scanner). Both only pay as far as the noise is
 independent, so this prints the correlations as well as the dB.
 
-Measured on sheetD (LAB 29): the error of two scans of one sheet correlates at
-rho 0.61-0.77, so four scans buy +1.0 dB and no number of them more than
-+1.4; lanes of one row share 6.7% of their error power against 1.7% by
-chance, so a perfect reference stroke would buy +0.22 dB.
+Measured on sheetD's four old scans with the fractional lag (LAB 29.10): the
+error of two scans of one sheet correlates at rho 0.70-0.85, so four scans buy
++0.7 dB over the median single and no number of them more than about +1.1;
+lanes of one row share 6.7% of their error power against 1.7% by chance, so a
+perfect reference stroke would buy +0.22 dB. Under the whole-sample lag
+(LAB 29.1) the scans looked less alike, rho 0.61-0.77 and +1.0 from four: part
+of what averaging "removed" was each scan's own half-sample offset.
 
 Reads are brought to the wav's rate rather than the wav to each read's, since
 scans of one sheet come back at different rates (6576-6608 Hz on sheetD) and
-have to land on one grid to be averaged. That costs a single scan about 1 dB
+have to land on one grid to be averaged. That costs a single scan about 1.4 dB
 against bench.py; it costs the comparison nothing.
 """
 import itertools
